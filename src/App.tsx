@@ -362,7 +362,7 @@ export default function App() {
         throw new Error('Falha ao obter histórico de transferências.');
       }
       const data = await res.json();
-      setMySessions(data);
+      setMySessions(Array.isArray(data) ? data : (data.sessions || []));
     } catch (err: any) {
       console.error(err);
       setMySessionsError(err.message || 'Erro ao carregar.');
@@ -856,7 +856,7 @@ export default function App() {
                   setActiveTab('create');
                 }}
               />
-            ) : activeTab === 'history' && user ? (
+            ) : activeTab === 'history' && (user || authLoading) ? (
               /* MY LINKS / HISTORY DASHBOARD SCREEN */
               <Card className="bg-card border-border rounded-2xl p-6 space-y-5 shadow-xl animate-in fade-in duration-300">
                 <div className="pb-4 border-b border-border/60 flex items-center justify-between">
@@ -874,7 +874,26 @@ export default function App() {
                   </button>
                 </div>
 
-                {mySessionsLoading ? (
+                {authLoading ? (
+                  <div className="text-center py-12 space-y-3">
+                    <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto" />
+                    <p className="text-xs text-muted-foreground">Verificando sessão...</p>
+                  </div>
+                ) : !user ? (
+                  <div className="text-center py-12 space-y-2 border border-dashed border-border rounded-xl">
+                    <p className="text-sm text-foreground font-medium">Sessão encerrada</p>
+                    <p className="text-xs text-muted-foreground/50">Faça login novamente para ver seus links.</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsAuthModalOpen(true)}
+                      className="mt-3 text-xs bg-primary/15 text-primary border border-primary/25 hover:bg-primary hover:text-primary-foreground px-3 py-1.5 rounded-lg transition-all font-semibold cursor-pointer"
+                    >
+                      Fazer Login
+                    </Button>
+                  </div>
+                ) : mySessionsLoading ? (
                   <div className="text-center py-12 space-y-3">
                     <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto" />
                     <p className="text-xs text-muted-foreground">Carregando suas transferências...</p>
