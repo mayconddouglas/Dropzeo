@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from './lib/supabase.js';
 import { generateToken, formatBytes } from './lib/utils.js';
 import { SelectedFile, UploadSession, ExpirationOption } from './types.js';
@@ -6,1227 +6,754 @@ import UploadZone from './components/UploadZone.js';
 import FileList from './components/FileList.js';
 import ExpirationSelector from './components/ExpirationSelector.js';
 import ShareLink from './components/ShareLink.js';
-import FilePreview from './components/FilePreview.js';
 import CountdownTimer from './components/CountdownTimer.js';
 import AuthModal from './components/AuthModal.js';
 import {
-  File,
-  Shield,
-  UploadCloud,
-  LogOut,
-  User,
-  ExternalLink,
-  Loader2,
-  AlertCircle,
-  Download,
-  Terminal,
-  Info,
-  Lock,
-  Clock,
-  RotateCcw,
-  Menu,
-  X
+  Upload, Shield, LogOut, User, Download, Lock, Clock,
+  RotateCcw, Menu, X, Zap, Link2, History, AlertTriangle,
+  Eye, Trash2, Copy, Check, ChevronRight, Loader2, ArrowLeft,
+  Package, FileText, Globe, KeyRound
 } from 'lucide-react';
 import JSZip from 'jszip';
-
-// shadcn/ui components integration
-import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Switch } from '@/components/ui/switch';
-import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
 import { Toaster, toast } from 'sonner';
 
 export default function App() {
   // ROUTING
   const [isRecipientView, setIsRecipientView] = useState(false);
   const [routeToken, setRouteToken] = useState<string | null>(null);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // AUTH STATE
+  // AUTH
   const [user, setUser] = useState<any>(null);
   const [sessionToken, setSessionToken] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [pendingUploadAfterLogin, setPendingUploadAfterLogin] = useState(false);
 
-  // UPLOADER STATE
+  // UPLOAD STATE
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
   const [expiration, setExpiration] = useState<ExpirationOption>('15min');
-  const [uploadLoading, setUploadLoading] = useState(false);
+  const [selfDestruct, setSelfDestruct] = useState(false);
+  const [password, setPassword] = useState('');
+  const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadSpeed, setUploadSpeed] = useState<string>('');
-  const [uploadEta, setUploadEta] = useState<string>('');
+  const [uploadSpeed, setUploadSpeed] = useState('');
+  const [uploadEta, setUploadEta] = useState('');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [shareResult, setShareResult] = useState<{ token: string; expiresAt: string } | null>(null);
 
-  // SENDER DASHBOARD STATE (AUTHENTICATED)
-  const [activeTab, setActiveTab] = useState<'create' | 'history'>('create');
+  // NAVIGATION
+  const [activeView, setActiveView] = useState<'upload' | 'links'>('upload');
+
+  // MY LINKS
   const [mySessions, setMySessions] = useState<any[]>([]);
   const [mySessionsLoading, setMySessionsLoading] = useState(false);
   const [mySessionsError, setMySessionsError] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // SECURITY & PRIVACY OPTIONS (SENDER)
-  const [selfDestruct, setSelfDestruct] = useState(false);
-  const [password, setPassword] = useState('');
-
-  // RECIPIENT VIEW STATE
+  // RECIPIENT
   const [recipientSession, setRecipientSession] = useState<UploadSession | null>(null);
   const [recipientPassword, setRecipientPassword] = useState('');
   const [passwordRequired, setPasswordRequired] = useState(false);
   const [passwordFeedback, setPasswordFeedback] = useState<string | null>(null);
   const [recipientLoading, setRecipientLoading] = useState(false);
-  const [recipientError, setRecipientError] = useState<{ status: 'NOT_FOUND' | 'EXPIRED' | 'ERROR'; message: string } | null>(null);
+  const [recipientError, setRecipientError] = useState<{ status: string; message: string } | null>(null);
   const [isZipping, setIsZipping] = useState(false);
-  const [isExpiredRecipientLink, setIsExpiredRecipientLink] = useState(false);
 
-  // AUTH MODAL TRIGGERS
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [pendingUploadAfterLogin, setPendingUploadAfterLogin] = useState(false);
-
-  // 1. Initial Router & Session Loading
+  // ─── Init ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    // Inject the theme preset class dark to index page
     document.documentElement.classList.add('dark');
-
-    // Basic route detection
     const match = window.location.pathname.match(/^\/s\/([^/]+)/);
-    if (match) {
-      setIsRecipientView(true);
-      setRouteToken(match[1]);
-    }
+    if (match) { setIsRecipientView(true); setRouteToken(match[1]); }
 
-    // Standard session tracking
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
       setSessionToken(session?.access_token ?? null);
       setAuthLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
       setUser(session?.user ?? null);
       setSessionToken(session?.access_token ?? null);
       setAuthLoading(false);
     });
-
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Fetch Recipient Data on Demand
-  useEffect(() => {
-    if (isRecipientView && routeToken) {
-      fetchRecipientSession();
-    }
-  }, [isRecipientView, routeToken]);
+  useEffect(() => { if (isRecipientView && routeToken) fetchRecipientSession(); }, [isRecipientView, routeToken]);
+  useEffect(() => { if (activeView === 'links' && user) fetchMySessions(); }, [activeView, sessionToken, user]);
 
+  // ─── Recipient ───────────────────────────────────────────────────────────
   const fetchRecipientSession = async () => {
     setRecipientLoading(true);
     setRecipientError(null);
     try {
       const url = `/api/session/${routeToken}${recipientPassword ? `?password=${encodeURIComponent(recipientPassword)}` : ''}`;
       const res = await fetch(url);
-      const contentType = res.headers.get('content-type');
-      const isJson = contentType && contentType.includes('application/json');
-
+      const isJson = res.headers.get('content-type')?.includes('application/json');
       if (!res.ok) {
-        let errStatus: 'NOT_FOUND' | 'EXPIRED' | 'ERROR' = 'NOT_FOUND';
-        let errMsg = 'Não foi possível carregar a sessão.';
-
         if (isJson) {
-          const errJson = await res.json();
-          if (errJson.error === 'PASSWORD_REQUIRED') {
+          const err = await res.json();
+          if (err.error === 'PASSWORD_REQUIRED') {
             setPasswordRequired(true);
-            setPasswordFeedback(recipientPassword ? 'Senha incorreta! Verifique os dígitos e tente de novo.' : null);
+            setPasswordFeedback(recipientPassword ? 'Senha incorreta.' : null);
             setRecipientError(null);
             return;
           }
-          errStatus = errJson.error === 'EXPIRED' ? 'EXPIRED' : 'NOT_FOUND';
-          errMsg = errJson.message || errMsg;
+          if (err.error === 'NOT_FOUND') { setRecipientError({ status: 'NOT_FOUND', message: 'Link não encontrado ou expirado.' }); return; }
         }
-
-        setRecipientError({
-          status: errStatus,
-          message: errMsg
-        });
-
-        if (errStatus === 'EXPIRED') {
-          setIsExpiredRecipientLink(true);
-        }
+        setRecipientError({ status: 'ERROR', message: 'Erro ao carregar.' });
         return;
       }
-
-      if (isJson) {
-        const data = await res.json();
-        setRecipientSession(data);
-        setPasswordRequired(false);
-        setPasswordFeedback(null);
-      } else {
-        throw new Error('Retornou uma resposta de servidor inválida (esperava JSON, mas recebeu HTML ou texto).');
-      }
-    } catch (err) {
-      console.error('Error fetching recipient token:', err);
-      setRecipientError({ status: 'ERROR', message: 'Houve uma falha de conexão com os servidores do Dropzeo.' });
-    } finally {
-      setRecipientLoading(false);
-    }
-  };
-
-  // 3. User Actions
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-  };
-
-  const handleFilesSelected = (files: File[]) => {
-    const updated = files.map((file) => {
-      const sf: SelectedFile = {
-        id: crypto.randomUUID(),
-        file: file,
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        progress: 0,
-        status: 'pending'
-      };
-      return sf;
-    });
-    setSelectedFiles((prev) => [...prev, ...updated]);
-    setUploadError(null);
-  };
-
-  const handleRemoveFile = (id: string) => {
-    setSelectedFiles((prev) => prev.filter((f) => f.id !== id));
-  };
-
-  const totalBytesSelected = selectedFiles.reduce((acc, curr) => acc + curr.size, 0);
-
-  // 4. Start Transfer (Gerar Link)
-  const handleStartUpload = async () => {
-    if (selectedFiles.length === 0) {
-      setUploadError('Por favor, selecione ao menos um arquivo para prosseguir.');
-      return;
-    }
-
-    // Limit check
-    const LIMIT_20MB = 20 * 1024 * 1024; // 20,971,520 bytes
-    if (!user && totalBytesSelected > LIMIT_20MB) {
-      setPendingUploadAfterLogin(true);
-      setIsAuthModalOpen(true);
-      return;
-    }
-
-    setUploadLoading(true);
-    setUploadError(null);
-    setUploadProgress(0);
-    setUploadSpeed('Iniciando...');
-    setUploadEta('Calculando...');
-
-    // Initialise XMLHttpRequest so we can track exact live percentages
-    const formData = new FormData();
-    selectedFiles.forEach((f) => {
-      formData.append('files', f.file);
-    });
-    formData.append('expiration', expiration);
-    formData.append('self_destruct', String(selfDestruct));
-    if (password) {
-      formData.append('password', password);
-    }
-
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/upload');
-
-    // Attach user auth token if logged in
-    if (sessionToken) {
-      xhr.setRequestHeader('Authorization', `Bearer ${sessionToken}`);
-    }
-
-    const startTime = Date.now();
-
-    // Update progress
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        const percent = Math.round((event.loaded / event.total) * 100);
-        setUploadProgress(percent);
-
-        // Live speed & ETA calculations
-        const timeElapsed = (Date.now() - startTime) / 1000; // in seconds
-        if (timeElapsed > 0.15) {
-          const speedBytesPerSec = event.loaded / timeElapsed;
-          
-          let speedStr = '';
-          if (speedBytesPerSec >= 1024 * 1024) {
-            speedStr = `${(speedBytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
-          } else if (speedBytesPerSec >= 1024) {
-            speedStr = `${(speedBytesPerSec / 1024).toFixed(1)} KB/s`;
-          } else {
-            speedStr = `${Math.round(speedBytesPerSec)} B/s`;
-          }
-          setUploadSpeed(speedStr);
-
-          if (percent < 100 && speedBytesPerSec > 0) {
-            const bytesRemaining = event.total - event.loaded;
-            const etaSeconds = bytesRemaining / speedBytesPerSec;
-            if (etaSeconds < 1) {
-              setUploadEta('Quase pronto...');
-            } else if (etaSeconds < 60) {
-              setUploadEta(`restam ~${Math.round(etaSeconds)}s`);
-            } else {
-              const mins = Math.floor(etaSeconds / 60);
-              const secs = Math.round(etaSeconds % 60);
-              setUploadEta(`restam ~${mins}m ${secs}s`);
-            }
-          } else {
-            setUploadEta('Finalizando...');
-          }
-        } else {
-          setUploadSpeed('Calculando...');
-          setUploadEta('Quase lá...');
-        }
-
-        setSelectedFiles((prev) =>
-          prev.map((f) => ({
-            ...f,
-            progress: percent,
-            status: 'uploading'
-          }))
-        );
-      }
-    };
-
-    // Load completions
-    xhr.onload = () => {
-      setUploadLoading(false);
-      const contentType = xhr.getResponseHeader('content-type') || '';
-      const isJson = contentType.includes('application/json');
-
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          if (!isJson) {
-            throw new Error('O servidor retornou uma resposta inválida (esperava JSON, mas recebeu HTML ou texto).');
-          }
-          const data = JSON.parse(xhr.responseText);
-          setSelectedFiles((prev) => prev.map((f) => ({ ...f, progress: 100, status: 'completed' })));
-          setShareResult({
-            token: data.share_token,
-            expiresAt: data.expires_at
-          });
-        } catch (err: any) {
-          const errorMsg = err.message || 'Erro ao carregar resposta do servidor.';
-          setUploadError(errorMsg);
-          setSelectedFiles((prev) => prev.map((f) => ({ ...f, status: 'failed', error: errorMsg })));
-        }
-      } else {
-        let errorMsg = 'Infelizmente, ocorreu uma falha ao enviar os seus arquivos.';
-        if (isJson) {
-          try {
-            const res = JSON.parse(xhr.responseText);
-            errorMsg = res.error || res.message || errorMsg;
-          } catch (_) {}
-        } else {
-          errorMsg = `Erro do servidor (${xhr.status}): Resposta inválida ou serviço indisponível.`;
-        }
-        setUploadError(errorMsg);
-        setSelectedFiles((prev) => prev.map((f) => ({ ...f, status: 'failed', error: errorMsg })));
-      }
-    };
-
-    xhr.onerror = () => {
-      setUploadLoading(false);
-      setUploadError('Falha crítica de conexão de rede.');
-      setSelectedFiles((prev) => prev.map((f) => ({ ...f, status: 'failed', error: 'Falha de rede' })));
-    };
-
-    xhr.send(formData);
-  };
-
-  // Success handler for Modal login redirection
-  const handleAuthSuccess = () => {
-    if (pendingUploadAfterLogin) {
-      setPendingUploadAfterLogin(false);
-      // Wait minor duration for token insertion, then upload
-      setTimeout(() => {
-        handleStartUpload();
-      }, 500);
-    }
-  };
-
-  const fetchMySessions = async () => {
-    if (!sessionToken) return;
-    setMySessionsLoading(true);
-    setMySessionsError(null);
-    try {
-      const res = await fetch('/api/my-sessions', {
-        headers: {
-          'Authorization': `Bearer ${sessionToken}`
-        }
-      });
-      if (!res.ok) {
-        throw new Error('Falha ao obter histórico de transferências.');
-      }
       const data = await res.json();
-      setMySessions(Array.isArray(data) ? data : (data.sessions || []));
-    } catch (err: any) {
-      console.error(err);
-      setMySessionsError(err.message || 'Erro ao carregar.');
-    } finally {
-      setMySessionsLoading(false);
-    }
+      if (data.is_expired) { setRecipientError({ status: 'EXPIRED', message: 'Este link expirou.' }); return; }
+      setRecipientSession(data);
+      setPasswordRequired(false);
+      setPasswordFeedback(null);
+    } catch { setRecipientError({ status: 'ERROR', message: 'Erro de conexão.' }); }
+    finally { setRecipientLoading(false); }
   };
 
-  const handleRevokeSession = async (token: string) => {
-    if (!sessionToken) return;
-    if (!confirm('Tem certeza que deseja apagar essa transferência e excluir todos os seus arquivos do servidor? Esta ação não pode ser desfeita.')) {
-      return;
-    }
-
-    try {
-      const res = await fetch(`/api/session/${token}`, {
-        method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${sessionToken}`
-        }
-      });
-      if (res.ok) {
-        toast.success('Link revogado e arquivos permanentemente apagados! 🗑️');
-        // Refresh list
-        fetchMySessions();
-      } else {
-        const errJson = await res.json();
-        toast.error(errJson.message || 'Falha ao revogar a transferência.');
-      }
-    } catch (err) {
-      console.error('Revocation request failed:', err);
-      toast.error('Ocorreu um erro ao excluir a transferência.');
-    }
-  };
-
-  // Trigger loading dashboard data when tab switches or user alters
-  useEffect(() => {
-    if (activeTab === 'history' && user) {
-      fetchMySessions();
-    }
-  }, [activeTab, sessionToken, user]);
-
-  const triggerSelfDestructIfNeeded = async () => {
-    // 1. Increment download count
-    if (routeToken) {
-      try {
-        await fetch(`/api/session/${routeToken}/download`, { method: 'POST' });
-      } catch (err) {
-        console.error('Failed to register download event:', err);
-      }
-    }
-
-    // 2. Self destruct if enabled
-    if (recipientSession?.self_destruct) {
-      try {
-        await fetch(`/api/session/${routeToken}/downloaded`, { method: 'POST' });
-        setIsExpiredRecipientLink(true);
-        setRecipientSession(null);
-        setRecipientError({
-          status: 'EXPIRED',
-          message: 'Esta transferência se autodestruiu com sucesso após o download solicitado!'
-        });
-      } catch (err) {
-        console.error('Failed to trigger self destruct cleanup:', err);
-      }
-    }
-  };
-
-  // ZIP Packing
   const handleDownloadAll = async () => {
-    if (!recipientSession || recipientSession.files.length === 0) return;
-
+    if (!recipientSession) return;
     if (recipientSession.files.length === 1) {
-      // Direct opening for single item
       const f = recipientSession.files[0];
-      const link = document.createElement('a');
-      link.href = f.download_url;
-      link.setAttribute('download', f.original_name);
-      link.target = '_blank';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      setTimeout(() => {
-        triggerSelfDestructIfNeeded();
-      }, 1500);
+      const a = document.createElement('a');
+      a.href = f.download_url; a.download = f.original_name; a.click();
+      await triggerDownloaded();
       return;
     }
-
     setIsZipping(true);
     try {
       const zip = new JSZip();
-      
-      for (const fileItem of recipientSession.files) {
-        const response = await fetch(fileItem.download_url);
-        if (!response.ok) throw new Error(`Failed to fetch file ${fileItem.original_name}`);
-        const blob = await response.blob();
-        zip.file(fileItem.original_name, blob);
-      }
+      await Promise.all(recipientSession.files.map(async (f) => {
+        const res = await fetch(f.download_url);
+        zip.file(f.original_name, await res.blob());
+      }));
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'dropzeo-files.zip'; a.click();
+      await triggerDownloaded();
+    } catch { toast.error('Erro ao compactar arquivos.'); }
+    finally { setIsZipping(false); }
+  };
 
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      const downloadUrl = window.URL.createObjectURL(zipBlob);
-
-      const link = document.createElement('a');
-      link.href = downloadUrl;
-      link.download = `dropzeo-arquivos-${routeToken}.zip`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(downloadUrl);
-
-      triggerSelfDestructIfNeeded();
-    } catch (err) {
-      console.error('ZIP generation failure:', err);
-      // fallback download individually sequentially
-      toast.warning('Ocorreu um problema ao compactar os arquivos. Iniciando downloads individuais em abas...');
-      recipientSession.files.forEach((file) => {
-        const w = window.open(file.download_url, '_blank');
-      });
-
-      setTimeout(() => {
-        triggerSelfDestructIfNeeded();
-      }, 3000);
-    } finally {
-      setIsZipping(false);
+  const triggerDownloaded = async () => {
+    if (!routeToken) return;
+    try { await fetch(`/api/session/${routeToken}/download`, { method: 'POST' }); } catch {}
+    if (recipientSession?.self_destruct) {
+      try { await fetch(`/api/session/${routeToken}/downloaded`, { method: 'POST' }); } catch {}
+      setRecipientError({ status: 'EXPIRED', message: 'Link autodestruído após download.' });
+      setRecipientSession(null);
     }
   };
 
-  const sidebarContent = (
-    <div className="flex flex-col h-full bg-card justify-between p-6">
-      <div className="space-y-8">
-        {/* Branding */}
-        <div className="flex flex-col gap-1">
-          <a href="/" className="flex items-start gap-1.5 group">
-            <span className="font-extrabold text-2xl tracking-tight text-foreground leading-none">
-              Dropzeo
-            </span>
-            <span className="text-[10px] text-muted-foreground font-medium tracking-tight bg-border/30 px-1.5 py-0.5 rounded-md border border-border -mt-1 scale-[0.85] origin-left select-none">
-              by <span className="text-primary font-semibold">brazeo.ai</span>
-            </span>
-          </a>
-          <p className="text-[11px] text-muted-foreground leading-snug mt-1">
-            Envie arquivos grandes temporariamente sem complicações.
-          </p>
-        </div>
+  // ─── Upload ──────────────────────────────────────────────────────────────
+  const handleFilesSelected = (files: FileList | File[]) => {
+    const newFiles: SelectedFile[] = Array.from(files).map((f) => ({
+      id: generateToken(8), file: f, name: f.name, size: f.size, type: f.type, progress: 0, status: 'pending'
+    }));
+    setSelectedFiles((prev) => [...prev, ...newFiles]);
+  };
 
-        {/* Menu Navigation */}
-        <div className="space-y-2.5">
-          <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest px-2">
-            Navegação
-          </p>
-          
-          {/* Option: Enviar Arquivos */}
-          <button
-            onClick={() => {
-              setActiveTab('create');
-              setIsSidebarOpen(false);
-            }}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer ${
-              activeTab === 'create'
-                ? 'bg-primary text-primary-foreground shadow-md font-semibold'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-            }`}
-          >
-            <UploadCloud className="w-4 h-4 shrink-0" />
-            <span>Enviar Arquivos</span>
-          </button>
+  const handleRemoveFile = (id: string) => setSelectedFiles((prev) => prev.filter((f) => f.id !== id));
 
-          {/* Option: Meus Links */}
-          <button
-            onClick={() => {
-              if (!user) {
-                toast.info('Para ver seu histórico e monitorar estatísticas, faça login na sua conta.');
-                setIsAuthModalOpen(true);
-              } else {
-                setActiveTab('history');
-              }
-              setIsSidebarOpen(false);
-            }}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer ${
-              activeTab === 'history'
-                ? 'bg-primary text-primary-foreground shadow-md font-semibold'
-                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <Clock className="w-4 h-4 shrink-0" />
-              <span>Meus Links</span>
+  const totalBytes = selectedFiles.reduce((s, f) => s + f.size, 0);
+
+  const handleStartUpload = () => {
+    if (!user) { setPendingUploadAfterLogin(true); setIsAuthModalOpen(true); return; }
+    if (selectedFiles.length === 0) { toast.error('Selecione ao menos um arquivo.'); return; }
+    if (password && (password.length < 4 || password.length > 6 || !/^\d+$/.test(password))) {
+      toast.error('A senha deve ter entre 4 e 6 dígitos numéricos.'); return;
+    }
+    doUpload();
+  };
+
+  const doUpload = () => {
+    setUploading(true); setUploadProgress(0); setUploadError(null); setUploadSpeed(''); setUploadEta('Calculando...');
+    const fd = new FormData();
+    selectedFiles.forEach((f) => fd.append('files', f.file));
+    fd.append('expiration', expiration);
+    fd.append('self_destruct', String(selfDestruct));
+    if (password) fd.append('password', password);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/upload');
+    if (sessionToken) xhr.setRequestHeader('Authorization', `Bearer ${sessionToken}`);
+
+    const startTime = Date.now();
+    xhr.upload.onprogress = (ev) => {
+      if (!ev.lengthComputable) return;
+      const pct = Math.round((ev.loaded / ev.total) * 100);
+      setUploadProgress(pct);
+      const elapsed = (Date.now() - startTime) / 1000;
+      if (elapsed > 0.15) {
+        const spd = ev.loaded / elapsed;
+        setUploadSpeed(spd >= 1048576 ? `${(spd / 1048576).toFixed(1)} MB/s` : `${(spd / 1024).toFixed(0)} KB/s`);
+        const eta = (ev.total - ev.loaded) / spd;
+        setUploadEta(eta < 60 ? `${Math.ceil(eta)}s` : `${Math.ceil(eta / 60)}m`);
+      }
+    };
+
+    xhr.onload = () => {
+      setUploading(false);
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (xhr.status === 200 && data.share_token) {
+          setShareResult({ token: data.share_token, expiresAt: data.expires_at });
+          toast.success('Link criado com sucesso!');
+        } else {
+          setUploadError(data.error === 'BETA_LIMIT_EXCEEDED' ? 'Limite de 50MB excedido.' : data.error || 'Erro ao enviar.');
+        }
+      } catch { setUploadError('Resposta inválida do servidor.'); }
+    };
+    xhr.onerror = () => { setUploading(false); setUploadError('Falha na conexão.'); };
+    xhr.send(fd);
+  };
+
+  // ─── My Sessions ─────────────────────────────────────────────────────────
+  const fetchMySessions = async () => {
+    if (!sessionToken) return;
+    setMySessionsLoading(true); setMySessionsError(null);
+    try {
+      const res = await fetch('/api/my-sessions', { headers: { Authorization: `Bearer ${sessionToken}` } });
+      if (!res.ok) throw new Error('Falha ao carregar.');
+      const data = await res.json();
+      setMySessions(Array.isArray(data) ? data : (data.sessions || []));
+    } catch (err: any) { setMySessionsError(err.message || 'Erro.'); }
+    finally { setMySessionsLoading(false); }
+  };
+
+  const handleRevokeSession = async (token: string) => {
+    if (!confirm('Apagar esta transferência permanentemente?')) return;
+    try {
+      const res = await fetch(`/api/session/${token}`, { method: 'DELETE', headers: { Authorization: `Bearer ${sessionToken}` } });
+      if (res.ok) { toast.success('Transferência removida.'); fetchMySessions(); }
+      else toast.error('Erro ao remover.');
+    } catch { toast.error('Erro de conexão.'); }
+  };
+
+  const handleCopyUrl = async (token: string, id: string) => {
+    await navigator.clipboard.writeText(`${window.location.origin}/s/${token}`);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    toast.success('Sessão encerrada.');
+    setActiveView('upload');
+  };
+
+  const handleAuthSuccess = () => {
+    if (pendingUploadAfterLogin) { setPendingUploadAfterLogin(false); setTimeout(doUpload, 500); }
+  };
+
+  const handleViewLink = (token: string) => {
+    window.open(`${window.location.origin}/s/${token}`, '_blank');
+  };
+
+  // ─── RECIPIENT VIEW ───────────────────────────────────────────────────────
+  if (isRecipientView) {
+    return (
+      <div className="min-h-screen bg-[hsl(220_14%_6%)] bg-grid flex flex-col items-center justify-center p-4">
+        <Toaster theme="dark" position="top-right" />
+        <div className="w-full max-w-md space-y-4 animate-fade-up">
+          {/* Brand */}
+          <a href="/" className="flex items-center gap-2 mb-6 group w-fit">
+            <div className="w-8 h-8 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center">
+              <Zap className="w-4 h-4 text-cyan-400" />
             </div>
-            {!user && (
-              <Lock className="w-3.5 h-3.5 text-muted-foreground/50" />
-            )}
-          </button>
-        </div>
-      </div>
+            <span className="font-bold text-white/80 text-sm tracking-tight group-hover:text-white transition-colors">Dropzeo</span>
+          </a>
 
-      {/* Account Profile Footer Section */}
-      <div className="border-t border-border/60 pt-6">
-        {authLoading ? (
-          <div className="flex items-center justify-center py-2">
-            <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
-          </div>
-        ) : user ? (
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <img 
-                src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(user.email || 'dropzeo')}`} 
-                alt="Avatar" 
-                className="w-8 h-8 rounded-full object-cover border border-border bg-background"
-                referrerPolicy="no-referrer"
+          {recipientLoading ? (
+            <div className="rounded-2xl bg-white/[0.03] border border-white/8 p-12 flex flex-col items-center gap-3">
+              <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+              <p className="text-sm text-white/40">Carregando arquivos...</p>
+            </div>
+          ) : passwordRequired ? (
+            <div className="rounded-2xl bg-white/[0.03] border border-white/8 p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-400/10 border border-amber-400/20 flex items-center justify-center">
+                  <KeyRound className="w-5 h-5 text-amber-400" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-white/80">Acesso protegido</p>
+                  <p className="text-xs text-white/35">Digite o código numérico para desbloquear</p>
+                </div>
+              </div>
+              {passwordFeedback && <p className="text-xs text-red-400 bg-red-400/10 border border-red-400/15 rounded-lg px-3 py-2">{passwordFeedback}</p>}
+              <input
+                type="number"
+                className="input-field text-center text-xl font-mono tracking-widest"
+                placeholder="• • • •"
+                value={recipientPassword}
+                onChange={(e) => setRecipientPassword(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && fetchRecipientSession()}
+                maxLength={6}
               />
-              <div className="min-w-0 flex-1 text-left">
-                <p className="text-xs font-semibold text-foreground truncate">
-                  {user.user_metadata?.name || user.user_metadata?.full_name || user.email?.split('@')[0]}
-                </p>
-                <p className="text-[10px] text-muted-foreground truncate" title={user.email}>
-                  {user.email}
-                </p>
+              <button onClick={fetchRecipientSession} className="w-full py-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-[hsl(220_14%_6%)] font-semibold text-sm transition-all cursor-pointer">
+                Desbloquear
+              </button>
+            </div>
+          ) : recipientError ? (
+            <div className="rounded-2xl bg-white/[0.03] border border-white/8 p-8 flex flex-col items-center gap-3 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-red-400/10 border border-red-400/20 flex items-center justify-center">
+                <AlertTriangle className="w-6 h-6 text-red-400" />
+              </div>
+              <p className="text-sm font-semibold text-white/70">{recipientError.message}</p>
+              <a href="/" className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors">← Voltar ao início</a>
+            </div>
+          ) : recipientSession ? (
+            <div className="rounded-2xl bg-white/[0.03] border border-white/8 overflow-hidden">
+              {/* Header */}
+              <div className="p-5 border-b border-white/6">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center">
+                      <Package className="w-5 h-5 text-cyan-400" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-white/85">{recipientSession.files.length} arquivo{recipientSession.files.length > 1 ? 's' : ''}</p>
+                      <p className="text-xs text-white/35">{formatBytes(recipientSession.files.reduce((s, f) => s + f.size_bytes, 0))}</p>
+                    </div>
+                  </div>
+                  <CountdownTimer expiresAt={recipientSession.expires_at} onExpire={() => { setRecipientError({ status: 'EXPIRED', message: 'Link expirado.' }); setRecipientSession(null); }} />
+                </div>
+                {recipientSession.self_destruct && (
+                  <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-400/8 border border-amber-400/15">
+                    <Shield className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span className="text-xs text-amber-400/80">Autodestrói após o download</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Files */}
+              <div className="p-3 space-y-1.5 max-h-64 overflow-y-auto">
+                {recipientSession.files.map((f) => (
+                  <a key={f.id} href={f.download_url} download={f.original_name} className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-white/[0.03] border border-transparent hover:border-white/8 transition-all group cursor-pointer">
+                    <div className="w-8 h-8 rounded-lg bg-white/5 border border-white/8 flex items-center justify-center shrink-0">
+                      <FileText className="w-4 h-4 text-white/30" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-white/70 truncate group-hover:text-white/90 transition-colors">{f.original_name}</p>
+                      <p className="text-[10px] text-white/25">{formatBytes(f.size_bytes)}</p>
+                    </div>
+                    <Download className="w-3.5 h-3.5 text-white/20 group-hover:text-cyan-400 transition-colors shrink-0" />
+                  </a>
+                ))}
+              </div>
+
+              {/* Download all */}
+              <div className="p-4 border-t border-white/6">
+                <button
+                  onClick={handleDownloadAll}
+                  disabled={isZipping}
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-[hsl(220_14%_6%)] font-semibold text-sm transition-all disabled:opacity-60 cursor-pointer"
+                >
+                  {isZipping ? <><Loader2 className="w-4 h-4 animate-spin" /> Compactando...</> : <><Download className="w-4 h-4" /> {recipientSession.files.length > 1 ? 'Baixar todos (ZIP)' : 'Baixar arquivo'}</>}
+                </button>
               </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleLogout}
-              className="w-full text-xs hover:bg-destructive hover:text-destructive-foreground hover:border-destructive text-muted-foreground transition-all cursor-pointer flex items-center justify-center gap-2 rounded-xl border-border bg-transparent"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-              <span>Sair da conta</span>
-            </Button>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <p className="text-[11px] text-muted-foreground/80 leading-relaxed text-left">
-              Faça login para salvar seus links de transferência e acompanhar envios ativos.
-            </p>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={() => setIsAuthModalOpen(true)}
-              className="w-full text-xs bg-primary hover:bg-primary/95 text-primary-foreground font-semibold py-2 rounded-xl cursor-pointer"
-            >
-              Entrar / Criar Conta
-            </Button>
-          </div>
-        )}
+          ) : null}
+        </div>
       </div>
-    </div>
-  );
+    );
+  }
+
+  // ─── MAIN APP ─────────────────────────────────────────────────────────────
+  const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'Usuário';
+  const userAvatar = user?.user_metadata?.avatar_url;
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans flex selection:bg-primary selection:text-primary-foreground">
-      <Toaster position="top-right" richColors />
+    <div className="flex h-screen bg-[hsl(220_14%_6%)] overflow-hidden">
+      <Toaster theme="dark" position="top-right" richColors />
+      <AuthModal isOpen={isAuthModalOpen} onClose={() => setIsAuthModalOpen(false)} onSuccess={handleAuthSuccess} />
 
-      {/* 1. SIDEBAR FOR DESKTOP (Always visible on md+) */}
-      <aside className="w-72 border-r border-border h-screen sticky top-0 hidden md:flex flex-col justify-between shrink-0 bg-card">
-        {sidebarContent}
-      </aside>
-
-      {/* 2. MOBILE DRAWER SIDEBAR WITH OVERLAY */}
-      {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/60 md:hidden animate-in fade-in duration-200"
-          onClick={() => setIsSidebarOpen(false)}
-        />
+      {/* ── Sidebar overlay (mobile) ── */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 z-40 lg:hidden" onClick={() => setSidebarOpen(false)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+        </div>
       )}
-      <aside 
-        className={`fixed top-0 bottom-0 left-0 z-50 w-72 bg-card border-r border-border transition-transform duration-300 md:hidden flex flex-col justify-between ${
-          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        <div className="absolute top-4 right-4 md:hidden">
-          <button 
-            onClick={() => setIsSidebarOpen(false)}
-            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
+
+      {/* ── Sidebar ── */}
+      <aside className={`fixed lg:relative inset-y-0 left-0 z-50 w-60 flex flex-col bg-[hsl(220_13%_8%)] border-r border-white/6 transition-transform duration-300 lg:translate-x-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        {/* Logo */}
+        <div className="flex items-center gap-3 px-5 py-5 border-b border-white/6">
+          <div className="w-8 h-8 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center shrink-0">
+            <Zap className="w-4 h-4 text-cyan-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-white/90 tracking-tight">Dropzeo</p>
+            <p className="text-[10px] text-white/30">by brazeo.ai</p>
+          </div>
+          <button onClick={() => setSidebarOpen(false)} className="lg:hidden w-6 h-6 flex items-center justify-center text-white/30 hover:text-white/60 cursor-pointer">
+            <X className="w-4 h-4" />
           </button>
         </div>
-        {sidebarContent}
+
+        {/* Nav */}
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+          <p className="px-3 py-2 text-[9px] font-bold text-white/20 uppercase tracking-widest">Principal</p>
+          <button
+            onClick={() => { setActiveView('upload'); setSidebarOpen(false); }}
+            className={`sidebar-item w-full ${activeView === 'upload' ? 'active' : ''}`}
+          >
+            <Upload className="w-4 h-4 shrink-0" />
+            <span>Enviar Arquivos</span>
+          </button>
+          <button
+            onClick={() => {
+              if (!user) { toast.info('Faça login para ver seus links.'); setIsAuthModalOpen(true); return; }
+              setActiveView('links'); setSidebarOpen(false);
+            }}
+            className={`sidebar-item w-full ${activeView === 'links' ? 'active' : ''}`}
+          >
+            <History className="w-4 h-4 shrink-0" />
+            <span>Meus Links</span>
+            {!user && <Lock className="w-3 h-3 ml-auto text-white/20" />}
+          </button>
+
+          <div className="my-3 border-t border-white/6" />
+          <p className="px-3 py-2 text-[9px] font-bold text-white/20 uppercase tracking-widest">Info</p>
+          <div className="sidebar-item cursor-default">
+            <Globe className="w-4 h-4 shrink-0" />
+            <span>Beta público</span>
+            <span className="badge badge-cyan ml-auto">Free</span>
+          </div>
+          <div className="sidebar-item cursor-default">
+            <Shield className="w-4 h-4 shrink-0" />
+            <span>50MB por link</span>
+          </div>
+        </nav>
+
+        {/* User area */}
+        <div className="p-3 border-t border-white/6">
+          {authLoading ? (
+            <div className="px-3 py-2 flex items-center gap-2">
+              <Loader2 className="w-4 h-4 text-white/20 animate-spin" />
+              <span className="text-xs text-white/25">Carregando...</span>
+            </div>
+          ) : user ? (
+            <div className="space-y-1">
+              <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/[0.03] border border-white/6">
+                {userAvatar ? (
+                  <img src={userAvatar} alt="" className="w-7 h-7 rounded-lg object-cover" />
+                ) : (
+                  <div className="w-7 h-7 rounded-lg bg-cyan-400/15 border border-cyan-400/20 flex items-center justify-center">
+                    <User className="w-3.5 h-3.5 text-cyan-400" />
+                  </div>
+                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-white/75 truncate">{userName}</p>
+                  <p className="text-[10px] text-white/30 truncate">{user.email}</p>
+                </div>
+              </div>
+              <button onClick={handleLogout} className="sidebar-item w-full text-red-400/60 hover:text-red-400 hover:bg-red-400/8">
+                <LogOut className="w-4 h-4 shrink-0" />
+                <span>Sair</span>
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setIsAuthModalOpen(true)} className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-cyan-400/10 border border-cyan-400/20 text-cyan-400 text-sm font-semibold hover:bg-cyan-400/15 transition-all cursor-pointer">
+              <User className="w-4 h-4" />
+              Entrar / Cadastrar
+            </button>
+          )}
+        </div>
       </aside>
 
-      {/* 3. MAIN WORKSPACE */}
-      <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
-        
-        {/* MOBILE TOP BAR (Only visible on mobile screens) */}
-        <header className="md:hidden border-b border-border/40 py-4 px-6 flex items-center justify-between shrink-0 bg-card/50 backdrop-blur-sm sticky top-0 z-40">
-          <a href="/" className="flex items-start gap-1.5 group">
-            <span className="font-extrabold text-xl tracking-tight text-foreground leading-none">
-              Dropzeo
-            </span>
-            <span className="text-[10px] text-muted-foreground font-medium tracking-tight bg-border/20 px-1 py-0.5 rounded-md border border-border -mt-1 scale-[0.8] origin-left select-none">
-              by <span className="text-primary font-semibold">brazeo.ai</span>
-            </span>
-          </a>
-
-          <div className="flex items-center gap-3">
-            {/* Short account trigger or sign in button in mobile top bar */}
-            {!user ? (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsAuthModalOpen(true)}
-                className="text-xs py-1.5 px-3 rounded-lg border-border bg-transparent"
-              >
-                Entrar
-              </Button>
-            ) : (
-              <div 
-                className="flex items-center gap-2 cursor-pointer bg-card border border-border rounded-lg py-1 px-2.5 hover:bg-muted transition-all"
-                onClick={() => {
-                  setIsSidebarOpen(true);
-                }}
-              >
-                <img 
-                  src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(user.email || 'dropzeo')}`} 
-                  alt="Avatar" 
-                  className="w-4 h-4 rounded-full object-cover"
-                />
-                <span className="text-[11px] font-medium max-w-[64px] truncate">
-                  {user.user_metadata?.name || user.email?.split('@')[0]}
-                </span>
-              </div>
-            )}
-
-            {/* Menu Trigger */}
-            <button
-              onClick={() => setIsSidebarOpen(true)}
-              className="p-1.5 -mr-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors cursor-pointer"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
+      {/* ── Main Content ── */}
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Topbar */}
+        <header className="flex items-center gap-4 px-5 py-4 border-b border-white/6 bg-[hsl(220_13%_8%)] shrink-0">
+          <button onClick={() => setSidebarOpen(true)} className="lg:hidden w-8 h-8 flex items-center justify-center rounded-lg text-white/40 hover:text-white/70 hover:bg-white/5 transition-all cursor-pointer">
+            <Menu className="w-5 h-5" />
+          </button>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-sm font-semibold text-white/80">
+              {activeView === 'upload' ? 'Enviar Arquivos' : 'Meus Links'}
+            </h1>
+            <p className="text-xs text-white/30 hidden sm:block">
+              {activeView === 'upload' ? 'Compartilhe temporariamente com segurança' : 'Histórico de transferências'}
+            </p>
+          </div>
+          {/* Mobile logo */}
+          <div className="flex lg:hidden items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center">
+              <Zap className="w-3.5 h-3.5 text-cyan-400" />
+            </div>
           </div>
         </header>
 
-        {/* WORKSPACE CONTENT CONTENT CONTAINER */}
-        <main className="max-w-2xl w-full mx-auto px-4 py-8 md:py-16 flex-1 flex flex-col justify-center">
-        
-        {/* ======================= RECIPIENT SCREEN ======================= */}
-        {isRecipientView && (
-          <div className="space-y-6">
-            {recipientLoading ? (
-              <div className="text-center py-16 space-y-4 bg-card border border-border rounded-2xl">
-                <Loader2 className="w-9 h-9 text-primary animate-spin mx-auto" />
-                <p className="text-sm text-muted-foreground">Localizando arquivos compartilhados...</p>
-              </div>
-            ) : passwordRequired ? (
-              <div className="bg-card border border-border rounded-2xl p-8 max-w-sm mx-auto space-y-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
-                <div className="p-3.5 bg-primary/15 border border-primary/25 text-primary rounded-full w-fit mx-auto">
-                  <Shield className="w-7 h-7" />
-                </div>
-                <div className="space-y-1.5">
-                  <h3 className="text-lg font-bold text-foreground tracking-tight">Transferência Protegida</h3>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    O remetente protegeu este link com uma senha de acesso. Insira o código numérico para prosseguir.
-                  </p>
-                </div>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    fetchRecipientSession();
-                  }}
-                  className="space-y-4"
-                >
-                  <div className="space-y-1.5 text-left">
-                    <input
-                      type="password"
-                      maxLength={6}
-                      placeholder="Senha numérica de 4 a 6 dígitos"
-                      className="w-full bg-background border border-border rounded-xl py-3 px-4 text-center font-bold text-base tracking-widest text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder:text-xs placeholder:tracking-normal placeholder:font-normal placeholder:text-muted-foreground/50"
-                      value={recipientPassword}
-                      onChange={(e) => setRecipientPassword(e.target.value.replace(/\D/g, ''))}
-                    />
-                    {passwordFeedback && (
-                      <p className="text-[11px] text-destructive text-center font-medium animate-pulse mt-1">
-                        {passwordFeedback}
-                      </p>
-                    )}
-                  </div>
-                  <Button
-                    type="submit"
-                    disabled={recipientPassword.length < 4 || recipientLoading}
-                    className="w-full py-3 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl font-semibold text-xs uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer border-none"
-                  >
-                    Desbloquear Arquivos
-                  </Button>
-                </form>
-              </div>
-            ) : recipientError ? (
-              <div className="bg-card border border-border rounded-2xl p-10 text-center space-y-5 animate-in fade-in duration-300">
-                <div className="p-4 bg-destructive/10 rounded-full w-fit mx-auto text-destructive border border-destructive/20">
-                  <AlertCircle className="w-9 h-9" />
-                </div>
-                <div className="space-y-2">
-                  <h3 className="text-lg font-bold text-foreground">Oops! Este link não está mais disponível</h3>
-                  <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
-                    {recipientError.status === 'EXPIRED' 
-                      ? 'O tempo do link expirou e os arquivos foram permanentemente removidos de acordo com as regras de expiração.'
-                      : 'O endereço de link buscado é inválido ou nunca existiu.'}
-                  </p>
-                </div>
-                <div className="pt-3">
-                  <a
-                    href="/"
-                    className="inline-flex items-center gap-1.5 py-2 px-4 bg-primary text-primary-foreground hover:bg-primary/95 text-xs font-semibold rounded-xl transition-all"
-                  >
-                    Ir para o Dropzeo
-                  </a>
-                </div>
-              </div>
-            ) : recipientSession ? (
-              <div className="bg-card border border-border rounded-2xl p-6 space-y-6 shadow-xl animate-in fade-in duration-300">
-                
-                {/* Countdown / Stats header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/60">
-                  <div className="space-y-0.5 text-left">
-                    <h2 className="text-base font-bold text-foreground tracking-tight">Arquivos Disponíveis</h2>
-                    <p className="text-xs text-muted-foreground">
-                      Estão salvos {recipientSession.files.length} arquivo(s) somando{' '}
-                      {formatBytes(recipientSession.files.reduce((a, b) => a + b.size_bytes, 0))}.
-                    </p>
-                  </div>
-                  <CountdownTimer
-                    expiresAt={recipientSession.expires_at}
-                    onExpire={() => setIsExpiredRecipientLink(true)}
-                    className="bg-background border border-border px-3 py-1.5 rounded-lg shrink-0"
-                  />
-                </div>
+        {/* Page content */}
+        <div className="flex-1 overflow-y-auto p-5 lg:p-8">
 
-                {/* Self Destruct Warning Notice if enabled */}
-                {recipientSession.self_destruct && !isExpiredRecipientLink && (
-                  <div className="flex items-start gap-3 p-4 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl leading-relaxed animate-pulse text-left">
-                    <Shield className="w-5 h-5 shrink-0 text-destructive mt-0.5" />
-                    <div>
-                      <strong className="font-bold block text-foreground mb-0.5">Link de Autodestruição Ativo:</strong>
-                      Este link e os arquivos originais serão **excluídos de forma definitiva e imediata** de nosso servidor assim que você realizar o download!
+          {/* ── UPLOAD VIEW ── */}
+          {activeView === 'upload' && (
+            <div className="max-w-xl mx-auto space-y-5 animate-fade-up">
+
+              {shareResult ? (
+                <ShareLink
+                  token={shareResult.token}
+                  expiresAt={shareResult.expiresAt}
+                  onReset={() => { setShareResult(null); setSelectedFiles([]); setSelfDestruct(false); setPassword(''); }}
+                />
+              ) : (
+                <>
+                  {/* Upload zone */}
+                  <div className="animate-fade-up">
+                    <UploadZone onFilesSelected={handleFilesSelected} maxSizeBytes={52428800} totalSizeBytesSelected={totalBytes} />
+                  </div>
+
+                  {/* File list */}
+                  {selectedFiles.length > 0 && (
+                    <div className="animate-fade-up stagger-1">
+                      <FileList files={selectedFiles} onRemove={handleRemoveFile} />
+                    </div>
+                  )}
+
+                  {/* Settings panel */}
+                  <div className="rounded-2xl bg-white/[0.02] border border-white/6 overflow-hidden animate-fade-up stagger-2">
+                    <div className="px-5 py-3.5 border-b border-white/6 flex items-center gap-2">
+                      <Shield className="w-3.5 h-3.5 text-white/25" />
+                      <span className="text-xs font-semibold text-white/40 uppercase tracking-widest">Configurações</span>
+                    </div>
+
+                    <div className="p-5 space-y-5">
+                      {/* Expiration */}
+                      <div className="space-y-2.5">
+                        <div className="flex items-center gap-2">
+                          <Clock className="w-3.5 h-3.5 text-white/30" />
+                          <span className="text-xs font-medium text-white/50">Expiração do link</span>
+                        </div>
+                        <ExpirationSelector value={expiration} onChange={setExpiration} />
+                      </div>
+
+                      <div className="border-t border-white/6" />
+
+                      {/* Self destruct */}
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="space-y-0.5">
+                          <p className="text-xs font-medium text-white/65">Autodestruição</p>
+                          <p className="text-[11px] text-white/30">Apaga após o primeiro download</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelfDestruct(!selfDestruct)}
+                          className={`relative w-11 h-6 rounded-full transition-all duration-200 cursor-pointer shrink-0 ${selfDestruct ? 'bg-cyan-400' : 'bg-white/10'}`}
+                        >
+                          <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${selfDestruct ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                        </button>
+                      </div>
+
+                      {/* Password */}
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <KeyRound className="w-3.5 h-3.5 text-white/30" />
+                          <span className="text-xs font-medium text-white/50">Senha de acesso <span className="text-white/25">(opcional · 4–6 dígitos)</span></span>
+                        </div>
+                        <input
+                          type="number"
+                          className="input-field font-mono tracking-widest text-center"
+                          placeholder="Sem senha"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value.slice(0, 6))}
+                          maxLength={6}
+                        />
+                      </div>
                     </div>
                   </div>
-                )}
 
-                {/* Previews & Lists */}
-                <FilePreview 
-                  files={recipientSession.files} 
-                  isExpired={isExpiredRecipientLink} 
-                  onDownloadTriggered={() => {
-                     setTimeout(() => {
-                       triggerSelfDestructIfNeeded();
-                     }, 1500);
-                  }}
-                />
+                  {/* Size indicator */}
+                  {totalBytes > 0 && (
+                    <div className="animate-fade-up stagger-3 flex items-center justify-between px-1">
+                      <span className="text-xs text-white/30">{formatBytes(totalBytes)} de 50 MB</span>
+                      <div className="flex-1 mx-4 h-1 bg-white/6 rounded-full overflow-hidden">
+                        <div className="h-full progress-bar-fill rounded-full" style={{ width: `${Math.min(100, (totalBytes / 52428800) * 100)}%` }} />
+                      </div>
+                      <span className="text-xs text-white/20">{Math.round((totalBytes / 52428800) * 100)}%</span>
+                    </div>
+                  )}
 
-                {/* Download Actions */}
-                {!isExpiredRecipientLink && (
-                  <Button
-                    id="download-all-btn"
-                    onClick={handleDownloadAll}
-                    disabled={isZipping}
-                    className="w-full py-3.5 px-4 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl font-semibold text-sm flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md border-none"
-                  >
-                    {isZipping ? (
-                      <>
-                        <Loader2 className="w-5 h-5 animate-spin" />
-                        <span>Compactando arquivos...</span>
-                      </>
+                  {/* Upload progress */}
+                  {uploading && (
+                    <div className="animate-fade-up rounded-2xl bg-white/[0.02] border border-white/6 p-5 space-y-3">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-white/50">Enviando...</span>
+                        <span className="font-mono text-white/70">{uploadProgress}%</span>
+                      </div>
+                      <div className="h-1.5 bg-white/6 rounded-full overflow-hidden">
+                        <div className="h-full progress-bar-fill rounded-full transition-all duration-200" style={{ width: `${uploadProgress}%` }} />
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-white/25">
+                        <span>{uploadSpeed}</span>
+                        <span>{uploadEta}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Error */}
+                  {uploadError && (
+                    <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-red-500/8 border border-red-500/15 text-xs text-red-400">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                      {uploadError}
+                    </div>
+                  )}
+
+                  {/* CTA */}
+                  <div className="animate-fade-up stagger-4">
+                    {!user ? (
+                      <div className="rounded-2xl bg-white/[0.02] border border-white/6 p-5 flex items-center gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center shrink-0">
+                          <Zap className="w-5 h-5 text-cyan-400" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-semibold text-white/70">Login necessário</p>
+                          <p className="text-[11px] text-white/35">Crie uma conta gratuita para enviar arquivos</p>
+                        </div>
+                        <button onClick={() => setIsAuthModalOpen(true)} className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-[hsl(220_14%_6%)] text-xs font-bold transition-all cursor-pointer">
+                          Entrar <ChevronRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     ) : (
-                      <>
-                        <Download className="w-4 h-4" />
-                        <span>Baixar Todos os Ativos {recipientSession.files.length > 1 ? '(ZIP)' : ''}</span>
-                      </>
+                      <button
+                        onClick={handleStartUpload}
+                        disabled={uploading || selectedFiles.length === 0}
+                        className="w-full flex items-center justify-center gap-2.5 py-3.5 rounded-2xl bg-cyan-400 hover:bg-cyan-300 active:scale-[0.99] text-[hsl(220_14%_6%)] font-bold text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer glow-cyan"
+                      >
+                        {uploading ? (
+                          <><Loader2 className="w-4 h-4 animate-spin" /> Enviando {uploadProgress}%</>
+                        ) : (
+                          <><Upload className="w-4 h-4" /> Gerar Link Temporário</>
+                        )}
+                      </button>
                     )}
-                  </Button>
-                )}
-              </div>
-            ) : null}
-          </div>
-        )}
-
-        {/* ======================= UPLOAD & GENERAL WORKFLOWS ======================= */}
-        {!isRecipientView && (
-          <div className="space-y-6">
-            
-            {/* Display Link Result View */}
-            {shareResult ? (
-              <ShareLink
-                token={shareResult.token}
-                expiresAt={shareResult.expiresAt}
-                onReset={() => {
-                  setShareResult(null);
-                  setSelectedFiles([]);
-                  setSelfDestruct(false);
-                  setPassword('');
-                  setActiveTab('create');
-                }}
-              />
-            ) : activeTab === 'history' && (user || authLoading) ? (
-              /* MY LINKS / HISTORY DASHBOARD SCREEN */
-              <Card className="bg-card border-border rounded-2xl p-6 space-y-5 shadow-xl animate-in fade-in duration-300">
-                <div className="pb-4 border-b border-border/60 flex items-center justify-between">
-                  <div className="space-y-0.5 text-left">
-                    <CardTitle className="text-base font-bold text-foreground tracking-tight">Suas Transferências</CardTitle>
-                    <CardDescription className="text-xs text-muted-foreground">Histórico de todos os pacotes ativos ou expirados.</CardDescription>
                   </div>
-                  <button 
-                    type="button"
-                    onClick={() => fetchMySessions()}
-                    className="p-2 hover:bg-muted/50 rounded-lg text-muted-foreground hover:text-foreground transition-all cursor-pointer"
-                    title="Atualizar painel"
-                  >
-                    <RotateCcw className={`w-4 h-4 ${mySessionsLoading ? 'animate-spin text-primary' : ''}`} />
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── MY LINKS VIEW ── */}
+          {activeView === 'links' && (
+            <div className="max-w-2xl mx-auto animate-fade-up">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-base font-bold text-white/85">Suas Transferências</h2>
+                  <p className="text-xs text-white/35 mt-0.5">Todos os links ativos e expirados</p>
+                </div>
+                <button
+                  onClick={fetchMySessions}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 border border-white/8 text-xs text-white/40 hover:text-white/70 hover:bg-white/8 transition-all cursor-pointer"
+                >
+                  <RotateCcw className={`w-3.5 h-3.5 ${mySessionsLoading ? 'animate-spin' : ''}`} />
+                  Atualizar
+                </button>
+              </div>
+
+              {authLoading || mySessionsLoading ? (
+                <div className="flex flex-col items-center gap-3 py-16">
+                  <Loader2 className="w-8 h-8 text-cyan-400 animate-spin" />
+                  <p className="text-sm text-white/30">Carregando...</p>
+                </div>
+              ) : !user ? (
+                <div className="flex flex-col items-center gap-4 py-16 rounded-2xl border border-dashed border-white/8">
+                  <Lock className="w-8 h-8 text-white/15" />
+                  <p className="text-sm text-white/40">Faça login para ver seus links</p>
+                  <button onClick={() => setIsAuthModalOpen(true)} className="px-5 py-2 rounded-xl bg-cyan-400/10 border border-cyan-400/20 text-cyan-400 text-sm font-semibold hover:bg-cyan-400/15 transition-all cursor-pointer">
+                    Entrar
                   </button>
                 </div>
-
-                {authLoading ? (
-                  <div className="text-center py-12 space-y-3">
-                    <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto" />
-                    <p className="text-xs text-muted-foreground">Verificando sessão...</p>
-                  </div>
-                ) : !user ? (
-                  <div className="text-center py-12 space-y-2 border border-dashed border-border rounded-xl">
-                    <p className="text-sm text-foreground font-medium">Sessão encerrada</p>
-                    <p className="text-xs text-muted-foreground/50">Faça login novamente para ver seus links.</p>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsAuthModalOpen(true)}
-                      className="mt-3 text-xs bg-primary/15 text-primary border border-primary/25 hover:bg-primary hover:text-primary-foreground px-3 py-1.5 rounded-lg transition-all font-semibold cursor-pointer"
-                    >
-                      Fazer Login
-                    </Button>
-                  </div>
-                ) : mySessionsLoading ? (
-                  <div className="text-center py-12 space-y-3">
-                    <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto" />
-                    <p className="text-xs text-muted-foreground">Carregando suas transferências...</p>
-                  </div>
-                ) : mySessionsError ? (
-                  <div className="text-center py-8 text-xs text-destructive bg-destructive/15 border border-destructive/20 rounded-xl">
-                    {mySessionsError}
-                  </div>
-                ) : mySessions.length === 0 ? (
-                  <div className="text-center py-12 space-y-2 border border-dashed border-border rounded-xl">
-                    <p className="text-sm text-foreground font-medium">Nenhum link ativo localizado</p>
-                    <p className="text-xs text-muted-foreground/50 max-w-xs mx-auto">Sua lista está limpa. Compartilhe um pacote de arquivos para vê-lo aqui!</p>
-                    <Button 
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setActiveTab('create')}
-                      className="mt-3 text-xs bg-primary/15 text-primary border border-primary/25 hover:bg-primary hover:text-primary-foreground px-3 py-1.5 rounded-lg transition-all font-semibold cursor-pointer"
-                    >
-                      Criar Novo Link
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="space-y-4 max-h-[480px] overflow-y-auto pr-1">
-                    {mySessions.map((session) => {
-                      const shareUrl = `${window.location.origin}/s/${session.share_token}`;
-                      return (
-                        <div key={session.id} className="p-4 bg-background/50 border border-border rounded-xl space-y-3 text-left relative hover:border-primary/40 transition-all">
-                          {/* Top Row: Info and Status Badge */}
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-h-0 flex-1">
-                              <span className="font-mono text-xs text-primary font-semibold select-all block truncate max-w-xs md:max-w-md">
-                                {shareUrl}
-                              </span>
-                              <span className="text-[10px] text-muted-foreground/50 mt-0.5 block">
-                                Criado em: {new Date(session.created_at).toLocaleString('pt-BR')}
-                              </span>
-                            </div>
-
-                            {session.is_expired ? (
-                              <span className="shrink-0 text-[10px] bg-destructive/10 border border-destructive/20 text-destructive font-bold px-2 py-0.5 rounded-md">
-                                Expirado
-                              </span>
-                            ) : (
-                              <span className="shrink-0 text-[10px] bg-[#22c55e]/10 border border-[#22c55e]/20 text-[#22c55e] font-bold px-2 py-0.5 rounded-md animate-pulse">
-                                Ativo
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Middle details metrics */}
-                          <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground bg-card/40 p-2.5 rounded-lg border border-border/50">
-                            <span className="font-medium text-foreground">
-                              {session.files.length} arquivo(s)
-                            </span>
-                            <span className="text-muted-foreground/30">•</span>
-                            <span>
-                              {formatBytes(session.files.reduce((acc: number, f: any) => acc + (f.size_bytes || 0), 0))}
-                            </span>
-                            <span className="text-muted-foreground/30">•</span>
-                            <span className="flex items-center gap-1 font-mono text-foreground text-xs py-0.5 px-1.5 bg-primary/10 border border-primary/20 rounded">
-                              <Download className="w-3 h-3 text-primary" />
-                              {session.download_count} download(s)
-                            </span>
-
-                            {/* Extra protection flags */}
-                            {(session.self_destruct || session.has_password) && (
-                              <div className="flex items-center gap-1.5 ml-auto shrink-0">
-                                {session.self_destruct && (
-                                  <span className="flex items-center gap-0.5 text-[9px] bg-primary/15 border border-primary/25 text-primary px-1.5 py-0.5 rounded" title="Autodestruição ativa">
-                                    <Shield className="w-2.5 h-2.5" />
-                                    autodestrói
-                                  </span>
-                                )}
-                                {session.has_password && (
-                                  <span className="flex items-center gap-0.5 text-[9px] bg-amber-500/15 border border-amber-500/25 text-amber-400 px-1.5 py-0.5 rounded" title="Protegido por senha">
-                                    <Lock className="w-2.5 h-2.5" />
-                                    com senha
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Expiry countdown if active */}
-                          {!session.is_expired && (
-                            <div className="text-[11px] text-muted-foreground flex items-center justify-between gap-2 pt-1.5 border-t border-border/40">
-                              <span className="flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5 text-primary" />
-                                <span>Expira em:</span>
-                                <CountdownTimer expiresAt={session.expires_at} className="font-semibold text-foreground bg-transparent border-none p-0" />
-                              </span>
-
-                              {/* Action triggers */}
-                              <div className="flex items-center gap-2">
-                                <Button
-                                  type="button"
-                                  size="xs"
-                                  onClick={async () => {
-                                    try {
-                                      await navigator.clipboard.writeText(shareUrl);
-                                      toast.success('Link copiado com sucesso! 🔗');
-                                    } catch (_) {}
-                                  }}
-                                  className="text-[11px] font-bold text-primary hover:text-primary-foreground px-2.5 py-1 bg-primary/10 hover:bg-primary border border-primary/20 rounded-lg transition-all cursor-pointer"
-                                >
-                                  Copiar
-                                </Button>
-                                <Button
-                                  type="button"
-                                  size="xs"
-                                  onClick={() => handleRevokeSession(session.share_token)}
-                                  className="text-[11px] font-bold text-destructive hover:text-destructive-foreground px-2.5 py-1 bg-destructive/10 hover:bg-destructive border border-destructive/20 rounded-lg transition-all cursor-pointer"
-                                >
-                                  Revogar Link
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-
-                          {session.is_expired && (
-                            <div className="text-[11px] text-muted-foreground/50 italic">
-                              Os arquivos expiraram e não podem ser mais recuperados.
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </Card>
-            ) : (
-              /* Core Upload Settings & Drag zones Card */
-              <div className="space-y-6">
-                
-                {/* Introduction texts */}
-                <div className="text-center space-y-2 mb-8 animate-in fade-in duration-300">
-                  {user && (
-                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-primary/10 border border-primary/20 text-primary font-medium text-xs rounded-full mb-2 select-none animate-in slide-in-from-top-2 duration-300">
-                      Olá, {user.user_metadata?.name || user.user_metadata?.full_name || user.email?.split('@')[0]}! 👋
-                    </div>
-                  )}
-                  <h1 className="text-3xl font-extrabold tracking-tight text-white md:text-4xl">
-                    Compartilhe temporariamente sem limites
-                  </h1>
-                  <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
-                    Envie os seus arquivos com expiração automática. Rápido, seguro e privado.
-                  </p>
+              ) : mySessionsError ? (
+                <div className="flex flex-col items-center gap-3 py-12 rounded-2xl border border-dashed border-red-500/15">
+                  <AlertTriangle className="w-6 h-6 text-red-400" />
+                  <p className="text-sm text-red-400/70">{mySessionsError}</p>
                 </div>
-
-                <Card className="bg-card border border-border p-5 rounded-2xl shadow-xl space-y-5">
-                  
-                  {/* Drag drop dropzone */}
-                  <UploadZone
-                    onFilesSelected={handleFilesSelected}
-                    maxSizeBytes={50 * 1024 * 1024} // 50MB
-                    totalSizeBytesSelected={totalBytesSelected}
-                  />
-
-                  {/* Active selected file logs view */}
-                  <FileList
-                    files={selectedFiles}
-                    onRemoveFile={handleRemoveFile}
-                    isUploading={uploadLoading}
-                  />
-
-                  {/* Setup Expiry Options */}
-                  {selectedFiles.length > 0 && (
-                    <div className="pt-2 border-t border-border/40 space-y-4">
-                      <ExpirationSelector value={expiration} onChange={setExpiration} />
-
-                      {/* Security and Privacy Options Panel */}
-                      <div className="p-4 bg-background/40 border border-border rounded-xl space-y-4">
-                        <div className="flex items-center gap-1.5 pb-2 border-b border-border/45">
-                          <Shield className="w-3.5 h-3.5 text-primary" />
-                          <span className="text-xs font-semibold text-foreground uppercase tracking-wider">
-                            Segurança & Privacidade
-                          </span>
-                        </div>
-
-                        {/* Self Destruct Switch */}
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="space-y-0.5">
-                            <Label className="text-sm font-semibold text-foreground cursor-pointer flex items-center gap-1.5" htmlFor="self-destruct-toggle">
-                              Autodestruição (Após Download)
-                            </Label>
-                            <p className="text-[11px] text-muted-foreground leading-relaxed">
-                              O link e os arquivos serão apagados do servidor de forma definitiva assim que o destinatário concluir o download.
-                            </p>
-                          </div>
-                          <div className="flex items-center pt-1">
-                            <Switch
-                              id="self-destruct-toggle"
-                              checked={selfDestruct}
-                              onCheckedChange={(checked) => setSelfDestruct(checked)}
-                              className="cursor-pointer"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Password Protection input */}
-                        <div className="space-y-2 pt-2 border-t border-border/40">
-                          <div className="flex items-center justify-between gap-4">
-                            <div className="space-y-0.5">
-                              <label className="text-sm font-semibold text-foreground flex items-center gap-1.5" htmlFor="password-input">
-                                Definir Senha de Acesso (4 a 6 dígitos)
-                              </label>
-                              <p className="text-[11px] text-muted-foreground leading-relaxed">
-                                Crie uma senha numérica de 4 a 6 dígitos para este link. Destinatários precisarão digitá-la.
-                              </p>
-                            </div>
-                          </div>
-                          <input
-                            id="password-input"
-                            type="password"
-                            maxLength={6}
-                            placeholder="Deixe em branco para livre acesso"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value.replace(/\D/g, ''))} // only digits allowed
-                            className="w-full bg-background border border-border text-foreground rounded-xl py-2 px-3 text-xs tracking-tight placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary transition-all"
-                          />
-                        </div>
-                      </div>
-
-                      {/* Display aggregate size indicators */}
-                      <div className="p-3.5 bg-background/50 rounded-xl border border-border/60 flex items-center justify-between text-xs text-muted-foreground">
-                        <span>Tamanho Combinado:</span>
-                        <span className="font-mono text-foreground font-medium">
-                          {formatBytes(totalBytesSelected)} / 50 MB
-                        </span>
-                      </div>
-
-                      {/* Warnings if over 20MB and not premium logged in */}
-                      {!user && totalBytesSelected > 20 * 1024 * 1024 && (
-                        <div className="flex items-start gap-2.5 p-3 bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs rounded-xl leading-relaxed">
-                          <Info className="w-4 h-4 shrink-0 mt-0.5" />
-                          <span>
-                            <strong>Login Obrigatório:</strong> uploads maiores que 20MB necessitam de cadastro gratuito. Seus arquivos serão retidos na lista ao se registrar.
-                          </span>
-                        </div>
-                      )}
-
-                      {/* General Transfer progress overlay if uploading */}
-                      {uploadLoading && (
-                        <div className="space-y-2.5 pt-1">
-                          <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1.5 font-medium">
-                              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary shrink-0" />
-                              <span>Enviando arquivos...</span>
-                            </span>
-                            <span className="font-mono text-foreground font-bold">{uploadProgress}%</span>
-                          </div>
-                          <Progress value={uploadProgress} className="h-2 bg-background rounded-full overflow-hidden" />
-                          
-                          {(uploadSpeed || uploadEta) && (
-                            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground/85 font-mono pt-0.5 px-0.5">
-                              {uploadSpeed && (
-                                <span className="flex items-center gap-1.5">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                  <span>Velocidade: <strong>{uploadSpeed}</strong></span>
-                                </span>
-                              )}
-                              {uploadEta && (
-                                <span className="text-right">
-                                  Tempo restante: <strong className="text-primary">{uploadEta}</strong>
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Throwing backend errors */}
-                      {uploadError && (
-                        <div className="flex items-start gap-2.5 bg-destructive/10 text-destructive border border-destructive/20 p-3.5 rounded-xl text-xs leading-relaxed animate-shake">
-                          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                          <span>{uploadError}</span>
-                        </div>
-                      )}
-
-                      {/* Trigger Button */}
-                      <Button
-                        id="generate-link-btn"
-                        type="button"
-                        onClick={handleStartUpload}
-                        disabled={uploadLoading || selectedFiles.length === 0}
-                        className="w-full py-3.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl font-bold text-sm tracking-wide transition-all select-none hover:scale-[1.005] active:scale-[0.995] cursor-pointer shadow-lg disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2 border-none"
+              ) : mySessions.length === 0 ? (
+                <div className="flex flex-col items-center gap-4 py-16 rounded-2xl border border-dashed border-white/6">
+                  <div className="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/8 flex items-center justify-center">
+                    <Link2 className="w-7 h-7 text-white/15" />
+                  </div>
+                  <div className="text-center space-y-1">
+                    <p className="text-sm font-medium text-white/40">Nenhum link ainda</p>
+                    <p className="text-xs text-white/20">Crie sua primeira transferência</p>
+                  </div>
+                  <button onClick={() => setActiveView('upload')} className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-400/10 border border-cyan-400/20 text-cyan-400 text-xs font-semibold hover:bg-cyan-400/15 transition-all cursor-pointer">
+                    <Upload className="w-3.5 h-3.5" /> Enviar Arquivos
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {mySessions.map((session, i) => {
+                    const shareUrl = `${window.location.origin}/s/${session.share_token}`;
+                    const isActive = !session.is_expired;
+                    const totalSize = (session.files || []).reduce((s: number, f: any) => s + (f.size_bytes || 0), 0);
+                    return (
+                      <div
+                        key={session.id}
+                        className="rounded-2xl bg-white/[0.025] border border-white/6 hover:border-white/10 transition-all overflow-hidden animate-fade-up"
+                        style={{ animationDelay: `${i * 0.05}s` }}
                       >
-                        {uploadLoading ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            <span>Enviando ({uploadProgress}%)</span>
-                          </>
-                        ) : (
-                          <span>Gerar Link Temporário</span>
-                        )}
-                      </Button>
-                    </div>
-                  )}
+                        {/* Top */}
+                        <div className="flex items-start gap-4 p-4">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${isActive ? 'bg-cyan-400/10 border-cyan-400/20' : 'bg-white/[0.03] border-white/8'}`}>
+                            <Link2 className={`w-5 h-5 ${isActive ? 'text-cyan-400' : 'text-white/20'}`} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-xs text-white/50 truncate max-w-[220px]">{shareUrl}</span>
+                              <span className={`badge ${isActive ? 'badge-green' : 'badge-red'}`}>
+                                <span className={`w-1 h-1 rounded-full ${isActive ? 'bg-green-400' : 'bg-red-400'}`} />
+                                {isActive ? 'Ativo' : 'Expirado'}
+                              </span>
+                            </div>
+                            <div className="flex items-center flex-wrap gap-3 mt-1.5 text-[11px] text-white/30">
+                              <span>{session.files?.length || 0} arquivo{session.files?.length !== 1 ? 's' : ''}</span>
+                              <span className="text-white/15">·</span>
+                              <span>{formatBytes(totalSize)}</span>
+                              <span className="text-white/15">·</span>
+                              <span>{session.download_count || 0} download{session.download_count !== 1 ? 's' : ''}</span>
+                              {session.self_destruct && <><span className="text-white/15">·</span><span className="badge badge-amber"><Shield className="w-2.5 h-2.5" />autodestrói</span></>}
+                            </div>
+                          </div>
+                        </div>
 
-                </Card>
-              </div>
-            )}
-          </div>
-        )}
-
-      </main>
-
-      {/* 3. LOWER FOOTER */}
-      <footer id="app-footer" className="max-w-2xl w-full mx-auto px-4 py-6 border-t border-border/45 text-center text-xs text-muted-foreground flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto">
-        <p className="font-mono text-[11px]">
-          Dropzeo © 2026. Todos os arquivos são auto-destruídos após o tempo estipulado.
-        </p>
-        <div className="flex items-center gap-4">
-          <span className="flex items-center gap-1">
-            <Shield className="w-3.5 h-3.5 text-primary animate-pulse" />
-            <span>Encriptação local e na nuvem</span>
-          </span>
+                        {/* Footer */}
+                        <div className="flex items-center gap-2 px-4 py-3 border-t border-white/5 bg-white/[0.01]">
+                          <span className="text-[10px] text-white/20 flex-1">
+                            {new Date(session.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                          <button
+                            onClick={() => handleCopyUrl(session.share_token, session.id)}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/8 text-[11px] text-white/40 hover:text-white/70 hover:bg-white/8 transition-all cursor-pointer"
+                          >
+                            {copiedId === session.id ? <><Check className="w-3 h-3 text-green-400" /> Copiado</> : <><Copy className="w-3 h-3" /> Copiar</>}
+                          </button>
+                          <button
+                            onClick={() => handleViewLink(session.share_token)}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/5 border border-white/8 text-[11px] text-white/40 hover:text-white/70 hover:bg-white/8 transition-all cursor-pointer"
+                          >
+                            <Eye className="w-3 h-3" /> Ver
+                          </button>
+                          <button
+                            onClick={() => handleRevokeSession(session.share_token)}
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-500/8 border border-red-500/15 text-[11px] text-red-400/60 hover:text-red-400 hover:bg-red-500/12 transition-all cursor-pointer"
+                          >
+                            <Trash2 className="w-3 h-3" /> Remover
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
-      </footer>
-
-      </div> {/* Close 3. MAIN WORKSPACE */}
-
-      {/* AUTHENTICATION MODAL */}
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => {
-          setIsAuthModalOpen(false);
-          setPendingUploadAfterLogin(false);
-        }}
-        onSuccess={handleAuthSuccess}
-      />
-
+      </main>
     </div>
   );
 }
