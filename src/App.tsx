@@ -23,7 +23,9 @@ import {
   Info,
   Lock,
   Clock,
-  RotateCcw
+  RotateCcw,
+  Menu,
+  X
 } from 'lucide-react';
 import JSZip from 'jszip';
 
@@ -40,6 +42,7 @@ export default function App() {
   // ROUTING
   const [isRecipientView, setIsRecipientView] = useState(false);
   const [routeToken, setRouteToken] = useState<string | null>(null);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // AUTH STATE
   const [user, setUser] = useState<any>(null);
@@ -51,6 +54,8 @@ export default function App() {
   const [expiration, setExpiration] = useState<ExpirationOption>('15min');
   const [uploadLoading, setUploadLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadSpeed, setUploadSpeed] = useState<string>('');
+  const [uploadEta, setUploadEta] = useState<string>('');
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [shareResult, setShareResult] = useState<{ token: string; expiresAt: string } | null>(null);
 
@@ -211,6 +216,8 @@ export default function App() {
     setUploadLoading(true);
     setUploadError(null);
     setUploadProgress(0);
+    setUploadSpeed('Iniciando...');
+    setUploadEta('Calculando...');
 
     // Initialise XMLHttpRequest so we can track exact live percentages
     const formData = new FormData();
@@ -231,11 +238,49 @@ export default function App() {
       xhr.setRequestHeader('Authorization', `Bearer ${sessionToken}`);
     }
 
+    const startTime = Date.now();
+
     // Update progress
     xhr.upload.onprogress = (event) => {
       if (event.lengthComputable) {
         const percent = Math.round((event.loaded / event.total) * 100);
         setUploadProgress(percent);
+
+        // Live speed & ETA calculations
+        const timeElapsed = (Date.now() - startTime) / 1000; // in seconds
+        if (timeElapsed > 0.15) {
+          const speedBytesPerSec = event.loaded / timeElapsed;
+          
+          let speedStr = '';
+          if (speedBytesPerSec >= 1024 * 1024) {
+            speedStr = `${(speedBytesPerSec / (1024 * 1024)).toFixed(1)} MB/s`;
+          } else if (speedBytesPerSec >= 1024) {
+            speedStr = `${(speedBytesPerSec / 1024).toFixed(1)} KB/s`;
+          } else {
+            speedStr = `${Math.round(speedBytesPerSec)} B/s`;
+          }
+          setUploadSpeed(speedStr);
+
+          if (percent < 100 && speedBytesPerSec > 0) {
+            const bytesRemaining = event.total - event.loaded;
+            const etaSeconds = bytesRemaining / speedBytesPerSec;
+            if (etaSeconds < 1) {
+              setUploadEta('Quase pronto...');
+            } else if (etaSeconds < 60) {
+              setUploadEta(`restam ~${Math.round(etaSeconds)}s`);
+            } else {
+              const mins = Math.floor(etaSeconds / 60);
+              const secs = Math.round(etaSeconds % 60);
+              setUploadEta(`restam ~${mins}m ${secs}s`);
+            }
+          } else {
+            setUploadEta('Finalizando...');
+          }
+        } else {
+          setUploadSpeed('Calculando...');
+          setUploadEta('Quase lá...');
+        }
+
         setSelectedFiles((prev) =>
           prev.map((f) => ({
             ...f,
@@ -446,76 +491,231 @@ export default function App() {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-[#0a0a0a] text-[#ffffff] font-sans flex flex-col justify-between selection:bg-[#6366f1] selection:text-white">
-      <Toaster position="top-right" richColors />
-      
-      {/* 1. TOP HEADER */}
-      <header id="app-header" className="max-w-4xl w-full mx-auto px-4 py-6 flex items-center justify-between border-b border-[#262626]/40">
-        <a href="/" className="flex items-start gap-1.5 group">
-          <span className="font-extrabold text-2xl tracking-tight text-white leading-none">
-            Dropzeo
-          </span>
-          <span className="text-[10px] text-[#a3a3a3] font-medium tracking-tight bg-[#262626]/30 px-1.5 py-0.5 rounded-md border border-[#262626] -mt-1 scale-[0.85] origin-left select-none">
-            by <span className="text-[#6366f1] font-semibold">brazeo.ai</span>
-          </span>
-        </a>
+  const sidebarContent = (
+    <div className="flex flex-col h-full bg-card justify-between p-6">
+      <div className="space-y-8">
+        {/* Branding */}
+        <div className="flex flex-col gap-1">
+          <a href="/" className="flex items-start gap-1.5 group">
+            <span className="font-extrabold text-2xl tracking-tight text-foreground leading-none">
+              Dropzeo
+            </span>
+            <span className="text-[10px] text-muted-foreground font-medium tracking-tight bg-border/30 px-1.5 py-0.5 rounded-md border border-border -mt-1 scale-[0.85] origin-left select-none">
+              by <span className="text-primary font-semibold">brazeo.ai</span>
+            </span>
+          </a>
+          <p className="text-[11px] text-muted-foreground leading-snug mt-1">
+            Envie arquivos grandes temporariamente sem complicações.
+          </p>
+        </div>
 
-        {/* User Account State Controls */}
-        <div className="flex items-center gap-3">
-          {authLoading ? (
-            <Loader2 className="w-4 h-4 text-[#a3a3a3] animate-spin" />
-          ) : user ? (
-            <div className="flex items-center gap-2.5 bg-[#141414] border border-[#262626] rounded-xl py-1.5 px-3">
+        {/* Menu Navigation */}
+        <div className="space-y-2.5">
+          <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest px-2">
+            Navegação
+          </p>
+          
+          {/* Option: Enviar Arquivos */}
+          <button
+            onClick={() => {
+              setActiveTab('create');
+              setIsSidebarOpen(false);
+            }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer ${
+              activeTab === 'create'
+                ? 'bg-primary text-primary-foreground shadow-md font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+            }`}
+          >
+            <UploadCloud className="w-4 h-4 shrink-0" />
+            <span>Enviar Arquivos</span>
+          </button>
+
+          {/* Option: Meus Links */}
+          <button
+            onClick={() => {
+              if (!user) {
+                toast.info('Para ver seu histórico e monitorar estatísticas, faça login na sua conta.');
+                setIsAuthModalOpen(true);
+              } else {
+                setActiveTab('history');
+              }
+              setIsSidebarOpen(false);
+            }}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer ${
+              activeTab === 'history'
+                ? 'bg-primary text-primary-foreground shadow-md font-semibold'
+                : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Clock className="w-4 h-4 shrink-0" />
+              <span>Meus Links</span>
+            </div>
+            {!user && (
+              <Lock className="w-3.5 h-3.5 text-muted-foreground/50" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Account Profile Footer Section */}
+      <div className="border-t border-border/60 pt-6">
+        {authLoading ? (
+          <div className="flex items-center justify-center py-2">
+            <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
+          </div>
+        ) : user ? (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
               <img 
                 src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(user.email || 'dropzeo')}`} 
                 alt="Avatar" 
-                className="w-5 h-5 rounded-full object-cover border border-[#262626] bg-[#0a0a0a]"
+                className="w-8 h-8 rounded-full object-cover border border-border bg-background"
                 referrerPolicy="no-referrer"
               />
-              <span className="text-xs text-[#ffffff] font-medium max-w-[124px] sm:max-w-[180px] truncate" title={user.email}>
-                {user.user_metadata?.name || user.user_metadata?.full_name || user.email?.split('@')[0]}
-              </span>
-              <button
-                onClick={handleLogout}
-                className="text-[#a3a3a3] hover:text-[#ef4444] transition-colors pl-2 border-l border-[#262626] cursor-pointer"
-                title="Sair"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-              </button>
+              <div className="min-w-0 flex-1 text-left">
+                <p className="text-xs font-semibold text-foreground truncate">
+                  {user.user_metadata?.name || user.user_metadata?.full_name || user.email?.split('@')[0]}
+                </p>
+                <p className="text-[10px] text-muted-foreground truncate" title={user.email}>
+                  {user.email}
+                </p>
+              </div>
             </div>
-          ) : (
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setIsAuthModalOpen(true)}
-              className="rounded-xl border-[#262626] bg-[#141414] hover:bg-[#202020] text-white transition-all cursor-pointer"
+              onClick={handleLogout}
+              className="w-full text-xs hover:bg-destructive hover:text-destructive-foreground hover:border-destructive text-muted-foreground transition-all cursor-pointer flex items-center justify-center gap-2 rounded-xl border-border bg-transparent"
             >
-              Criar Conta / Entrar
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Sair da conta</span>
             </Button>
-          )}
-        </div>
-      </header>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-[11px] text-muted-foreground/80 leading-relaxed text-left">
+              Faça login para salvar seus links de transferência e acompanhar envios ativos.
+            </p>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => setIsAuthModalOpen(true)}
+              className="w-full text-xs bg-primary hover:bg-primary/95 text-primary-foreground font-semibold py-2 rounded-xl cursor-pointer"
+            >
+              Entrar / Criar Conta
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 
-      {/* 2. CORE LAYOUT CONTAINER */}
-      <main className="max-w-2xl w-full mx-auto px-4 py-8 flex-1 flex flex-col justify-center">
+  return (
+    <div className="min-h-screen bg-background text-foreground font-sans flex selection:bg-primary selection:text-primary-foreground">
+      <Toaster position="top-right" richColors />
+
+      {/* 1. SIDEBAR FOR DESKTOP (Always visible on md+) */}
+      <aside className="w-72 border-r border-border h-screen sticky top-0 hidden md:flex flex-col justify-between shrink-0 bg-card">
+        {sidebarContent}
+      </aside>
+
+      {/* 2. MOBILE DRAWER SIDEBAR WITH OVERLAY */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 z-50 bg-black/60 md:hidden animate-in fade-in duration-200"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+      <aside 
+        className={`fixed top-0 bottom-0 left-0 z-50 w-72 bg-card border-r border-border transition-transform duration-300 md:hidden flex flex-col justify-between ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+      >
+        <div className="absolute top-4 right-4 md:hidden">
+          <button 
+            onClick={() => setIsSidebarOpen(false)}
+            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        {sidebarContent}
+      </aside>
+
+      {/* 3. MAIN WORKSPACE */}
+      <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
+        
+        {/* MOBILE TOP BAR (Only visible on mobile screens) */}
+        <header className="md:hidden border-b border-border/40 py-4 px-6 flex items-center justify-between shrink-0 bg-card/50 backdrop-blur-sm sticky top-0 z-40">
+          <a href="/" className="flex items-start gap-1.5 group">
+            <span className="font-extrabold text-xl tracking-tight text-foreground leading-none">
+              Dropzeo
+            </span>
+            <span className="text-[10px] text-muted-foreground font-medium tracking-tight bg-border/20 px-1 py-0.5 rounded-md border border-border -mt-1 scale-[0.8] origin-left select-none">
+              by <span className="text-primary font-semibold">brazeo.ai</span>
+            </span>
+          </a>
+
+          <div className="flex items-center gap-3">
+            {/* Short account trigger or sign in button in mobile top bar */}
+            {!user ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsAuthModalOpen(true)}
+                className="text-xs py-1.5 px-3 rounded-lg border-border bg-transparent"
+              >
+                Entrar
+              </Button>
+            ) : (
+              <div 
+                className="flex items-center gap-2 cursor-pointer bg-card border border-border rounded-lg py-1 px-2.5 hover:bg-muted transition-all"
+                onClick={() => {
+                  setIsSidebarOpen(true);
+                }}
+              >
+                <img 
+                  src={user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(user.email || 'dropzeo')}`} 
+                  alt="Avatar" 
+                  className="w-4 h-4 rounded-full object-cover"
+                />
+                <span className="text-[11px] font-medium max-w-[64px] truncate">
+                  {user.user_metadata?.name || user.email?.split('@')[0]}
+                </span>
+              </div>
+            )}
+
+            {/* Menu Trigger */}
+            <button
+              onClick={() => setIsSidebarOpen(true)}
+              className="p-1.5 -mr-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg transition-colors cursor-pointer"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          </div>
+        </header>
+
+        {/* WORKSPACE CONTENT CONTENT CONTAINER */}
+        <main className="max-w-2xl w-full mx-auto px-4 py-8 md:py-16 flex-1 flex flex-col justify-center">
         
         {/* ======================= RECIPIENT SCREEN ======================= */}
         {isRecipientView && (
           <div className="space-y-6">
             {recipientLoading ? (
-              <div className="text-center py-16 space-y-4 bg-[#141414] border border-[#262626] rounded-2xl">
-                <Loader2 className="w-9 h-9 text-[#6366f1] animate-spin mx-auto" />
-                <p className="text-sm text-[#a3a3a3]">Localizando arquivos compartilhados...</p>
+              <div className="text-center py-16 space-y-4 bg-card border border-border rounded-2xl">
+                <Loader2 className="w-9 h-9 text-primary animate-spin mx-auto" />
+                <p className="text-sm text-muted-foreground">Localizando arquivos compartilhados...</p>
               </div>
             ) : passwordRequired ? (
-              <div className="bg-[#141414] border border-[#262626] rounded-2xl p-8 max-w-sm mx-auto space-y-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
-                <div className="p-3.5 bg-[#6366f1]/15 border border-[#6366f1]/25 text-[#818cf8] rounded-full w-fit mx-auto">
+              <div className="bg-card border border-border rounded-2xl p-8 max-w-sm mx-auto space-y-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+                <div className="p-3.5 bg-primary/15 border border-primary/25 text-primary rounded-full w-fit mx-auto">
                   <Shield className="w-7 h-7" />
                 </div>
                 <div className="space-y-1.5">
-                  <h3 className="text-lg font-bold text-white tracking-tight">Transferência Protegida</h3>
-                  <p className="text-xs text-[#a3a3a3] leading-relaxed">
+                  <h3 className="text-lg font-bold text-foreground tracking-tight">Transferência Protegida</h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
                     O remetente protegeu este link com uma senha de acesso. Insira o código numérico para prosseguir.
                   </p>
                 </div>
@@ -531,12 +731,12 @@ export default function App() {
                       type="password"
                       maxLength={6}
                       placeholder="Senha numérica de 4 a 6 dígitos"
-                      className="w-full bg-[#0a0a0a] border border-[#262626] rounded-xl py-3 px-4 text-center font-bold text-base tracking-widest text-white focus:outline-none focus:border-[#6366f1] focus:ring-1 focus:ring-[#6366f1] transition-all placeholder:text-xs placeholder:tracking-normal placeholder:font-normal placeholder:text-[#525252]"
+                      className="w-full bg-background border border-border rounded-xl py-3 px-4 text-center font-bold text-base tracking-widest text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all placeholder:text-xs placeholder:tracking-normal placeholder:font-normal placeholder:text-muted-foreground/50"
                       value={recipientPassword}
                       onChange={(e) => setRecipientPassword(e.target.value.replace(/\D/g, ''))}
                     />
                     {passwordFeedback && (
-                      <p className="text-[11px] text-[#ef4444] text-center font-medium animate-pulse mt-1">
+                      <p className="text-[11px] text-destructive text-center font-medium animate-pulse mt-1">
                         {passwordFeedback}
                       </p>
                     )}
@@ -544,20 +744,20 @@ export default function App() {
                   <Button
                     type="submit"
                     disabled={recipientPassword.length < 4 || recipientLoading}
-                    className="w-full py-3 bg-[#6366f1] hover:bg-[#4f46e5] text-white rounded-xl font-semibold text-xs uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer border-none"
+                    className="w-full py-3 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl font-semibold text-xs uppercase tracking-wider transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer border-none"
                   >
                     Desbloquear Arquivos
                   </Button>
                 </form>
               </div>
             ) : recipientError ? (
-              <div className="bg-[#141414] border border-[#262626] rounded-2xl p-10 text-center space-y-5 animate-in fade-in duration-300">
-                <div className="p-4 bg-[#ef4444]/10 rounded-full w-fit mx-auto text-[#ef4444] border border-[#ef4444]/20">
+              <div className="bg-card border border-border rounded-2xl p-10 text-center space-y-5 animate-in fade-in duration-300">
+                <div className="p-4 bg-destructive/10 rounded-full w-fit mx-auto text-destructive border border-destructive/20">
                   <AlertCircle className="w-9 h-9" />
                 </div>
                 <div className="space-y-2">
-                  <h3 className="text-lg font-bold text-white">Oops! Este link não está mais disponível</h3>
-                  <p className="text-sm text-[#a3a3a3] max-w-md mx-auto leading-relaxed">
+                  <h3 className="text-lg font-bold text-foreground">Oops! Este link não está mais disponível</h3>
+                  <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
                     {recipientError.status === 'EXPIRED' 
                       ? 'O tempo do link expirou e os arquivos foram permanentemente removidos de acordo com as regras de expiração.'
                       : 'O endereço de link buscado é inválido ou nunca existiu.'}
@@ -566,20 +766,20 @@ export default function App() {
                 <div className="pt-3">
                   <a
                     href="/"
-                    className="inline-flex items-center gap-1.5 py-2 px-4 bg-[#6366f1] text-white hover:text-white hover:bg-[#4f46e5] text-xs font-semibold rounded-xl transition-all"
+                    className="inline-flex items-center gap-1.5 py-2 px-4 bg-primary text-primary-foreground hover:bg-primary/95 text-xs font-semibold rounded-xl transition-all"
                   >
                     Ir para o Dropzeo
                   </a>
                 </div>
               </div>
             ) : recipientSession ? (
-              <div className="bg-[#141414] border border-[#262626] rounded-2xl p-6 space-y-6 shadow-xl animate-in fade-in duration-300">
+              <div className="bg-card border border-border rounded-2xl p-6 space-y-6 shadow-xl animate-in fade-in duration-300">
                 
                 {/* Countdown / Stats header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#262626]/60">
-                  <div className="space-y-0.5">
-                    <h2 className="text-base font-bold text-white tracking-tight">Arquivos Disponíveis</h2>
-                    <p className="text-xs text-[#a3a3a3]">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/60">
+                  <div className="space-y-0.5 text-left">
+                    <h2 className="text-base font-bold text-foreground tracking-tight">Arquivos Disponíveis</h2>
+                    <p className="text-xs text-muted-foreground">
                       Estão salvos {recipientSession.files.length} arquivo(s) somando{' '}
                       {formatBytes(recipientSession.files.reduce((a, b) => a + b.size_bytes, 0))}.
                     </p>
@@ -587,16 +787,16 @@ export default function App() {
                   <CountdownTimer
                     expiresAt={recipientSession.expires_at}
                     onExpire={() => setIsExpiredRecipientLink(true)}
-                    className="bg-[#0a0a0a] border border-[#262626] px-3 py-1.5 rounded-lg shrink-0"
+                    className="bg-background border border-border px-3 py-1.5 rounded-lg shrink-0"
                   />
                 </div>
 
                 {/* Self Destruct Warning Notice if enabled */}
                 {recipientSession.self_destruct && !isExpiredRecipientLink && (
-                  <div className="flex items-start gap-3 p-4 bg-[#ef4444]/10 border border-[#ef4444]/20 text-[#fca5a5] text-xs rounded-xl leading-relaxed animate-pulse">
-                    <Shield className="w-5 h-5 shrink-0 text-[#fca5a5] mt-0.5" />
+                  <div className="flex items-start gap-3 p-4 bg-destructive/10 border border-destructive/20 text-destructive text-xs rounded-xl leading-relaxed animate-pulse text-left">
+                    <Shield className="w-5 h-5 shrink-0 text-destructive mt-0.5" />
                     <div>
-                      <strong className="font-bold block text-white mb-0.5">Link de Autodestruição Ativo:</strong>
+                      <strong className="font-bold block text-foreground mb-0.5">Link de Autodestruição Ativo:</strong>
                       Este link e os arquivos originais serão **excluídos de forma definitiva e imediata** de nosso servidor assim que você realizar o download!
                     </div>
                   </div>
@@ -607,9 +807,9 @@ export default function App() {
                   files={recipientSession.files} 
                   isExpired={isExpiredRecipientLink} 
                   onDownloadTriggered={() => {
-                    setTimeout(() => {
-                      triggerSelfDestructIfNeeded();
-                    }, 1500);
+                     setTimeout(() => {
+                       triggerSelfDestructIfNeeded();
+                     }, 1500);
                   }}
                 />
 
@@ -619,7 +819,7 @@ export default function App() {
                     id="download-all-btn"
                     onClick={handleDownloadAll}
                     disabled={isZipping}
-                    className="w-full py-3.5 px-4 bg-[#6366f1] hover:bg-[#4f46e5] text-white rounded-xl font-semibold text-sm flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md border-none"
+                    className="w-full py-3.5 px-4 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl font-semibold text-sm flex items-center justify-center gap-2 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md border-none"
                   >
                     {isZipping ? (
                       <>
@@ -629,7 +829,7 @@ export default function App() {
                     ) : (
                       <>
                         <Download className="w-4 h-4" />
-                        <span>Baixar Todos os Arquivo(s) {recipientSession.files.length > 1 ? '(ZIP)' : ''}</span>
+                        <span>Baixar Todos os Ativos {recipientSession.files.length > 1 ? '(ZIP)' : ''}</span>
                       </>
                     )}
                   </Button>
@@ -643,24 +843,6 @@ export default function App() {
         {!isRecipientView && (
           <div className="space-y-6">
             
-            {/* Tab selector for authenticated users */}
-            {user && (
-              <Tabs
-                value={activeTab}
-                onValueChange={(val) => setActiveTab(val as 'create' | 'history')}
-                className="w-full max-w-sm mx-auto mb-4 animate-in fade-in duration-300"
-              >
-                <TabsList className="grid w-full grid-cols-2 rounded-full p-1 bg-[#141414] border border-[#262626]/60">
-                  <TabsTrigger value="create" className="cursor-pointer text-xs font-semibold rounded-full py-1.5">
-                    Enviar Arquivos
-                  </TabsTrigger>
-                  <TabsTrigger value="history" className="cursor-pointer text-xs font-semibold rounded-full py-1.5">
-                    Meus Links
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-            )}
-
             {/* Display Link Result View */}
             {shareResult ? (
               <ShareLink
@@ -676,41 +858,41 @@ export default function App() {
               />
             ) : activeTab === 'history' && user ? (
               /* MY LINKS / HISTORY DASHBOARD SCREEN */
-              <Card className="bg-[#141414] border-[#262626] rounded-2xl p-6 space-y-5 shadow-xl animate-in fade-in duration-300">
-                <div className="pb-4 border-b border-[#262626]/60 flex items-center justify-between">
+              <Card className="bg-card border-border rounded-2xl p-6 space-y-5 shadow-xl animate-in fade-in duration-300">
+                <div className="pb-4 border-b border-border/60 flex items-center justify-between">
                   <div className="space-y-0.5 text-left">
-                    <CardTitle className="text-base font-bold text-white tracking-tight">Suas Transferências</CardTitle>
-                    <CardDescription className="text-xs text-[#a3a3a3]">Histórico de todos os pacotes ativos ou expirados.</CardDescription>
+                    <CardTitle className="text-base font-bold text-foreground tracking-tight">Suas Transferências</CardTitle>
+                    <CardDescription className="text-xs text-muted-foreground">Histórico de todos os pacotes ativos ou expirados.</CardDescription>
                   </div>
                   <button 
                     type="button"
                     onClick={() => fetchMySessions()}
-                    className="p-2 hover:bg-[#262626]/50 rounded-lg text-[#a3a3a3] hover:text-white transition-all cursor-pointer"
+                    className="p-2 hover:bg-muted/50 rounded-lg text-muted-foreground hover:text-foreground transition-all cursor-pointer"
                     title="Atualizar painel"
                   >
-                    <RotateCcw className={`w-4 h-4 ${mySessionsLoading ? 'animate-spin text-[#6366f1]' : ''}`} />
+                    <RotateCcw className={`w-4 h-4 ${mySessionsLoading ? 'animate-spin text-primary' : ''}`} />
                   </button>
                 </div>
 
                 {mySessionsLoading ? (
                   <div className="text-center py-12 space-y-3">
-                    <Loader2 className="w-8 h-8 text-[#6366f1] animate-spin mx-auto" />
-                    <p className="text-xs text-[#a3a3a3]">Carregando suas transferências...</p>
+                    <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto" />
+                    <p className="text-xs text-muted-foreground">Carregando suas transferências...</p>
                   </div>
                 ) : mySessionsError ? (
-                  <div className="text-center py-8 text-xs text-[#ef4444] bg-[#ef4444]/15 border border-[#ef4444]/20 rounded-xl">
+                  <div className="text-center py-8 text-xs text-destructive bg-destructive/15 border border-destructive/20 rounded-xl">
                     {mySessionsError}
                   </div>
                 ) : mySessions.length === 0 ? (
-                  <div className="text-center py-12 space-y-2 border border-dashed border-[#262626] rounded-xl">
-                    <p className="text-sm text-white font-medium">Nenhum link ativo localizado</p>
-                    <p className="text-xs text-[#525252] max-w-xs mx-auto">Sua lista está limpa. Compartilhe um pacote de arquivos para vê-lo aqui!</p>
+                  <div className="text-center py-12 space-y-2 border border-dashed border-border rounded-xl">
+                    <p className="text-sm text-foreground font-medium">Nenhum link ativo localizado</p>
+                    <p className="text-xs text-muted-foreground/50 max-w-xs mx-auto">Sua lista está limpa. Compartilhe um pacote de arquivos para vê-lo aqui!</p>
                     <Button 
                       type="button"
                       variant="outline"
                       size="sm"
                       onClick={() => setActiveTab('create')}
-                      className="mt-3 text-xs bg-[#6366f1]/15 text-[#818cf8] border border-[#6366f1]/25 hover:bg-[#6366f1] hover:text-white px-3 py-1.5 rounded-lg transition-all font-semibold cursor-pointer"
+                      className="mt-3 text-xs bg-primary/15 text-primary border border-primary/25 hover:bg-primary hover:text-primary-foreground px-3 py-1.5 rounded-lg transition-all font-semibold cursor-pointer"
                     >
                       Criar Novo Link
                     </Button>
@@ -720,20 +902,20 @@ export default function App() {
                     {mySessions.map((session) => {
                       const shareUrl = `${window.location.origin}/s/${session.share_token}`;
                       return (
-                        <div key={session.id} className="p-4 bg-[#0a0a0a]/50 border border-[#262626] rounded-xl space-y-3 text-left relative hover:border-[#6366f1]/40 transition-all">
+                        <div key={session.id} className="p-4 bg-background/50 border border-border rounded-xl space-y-3 text-left relative hover:border-primary/40 transition-all">
                           {/* Top Row: Info and Status Badge */}
                           <div className="flex items-start justify-between gap-4">
                             <div className="min-h-0 flex-1">
-                              <span className="font-mono text-xs text-[#6366f1] font-semibold select-all block truncate max-w-xs md:max-w-md">
+                              <span className="font-mono text-xs text-primary font-semibold select-all block truncate max-w-xs md:max-w-md">
                                 {shareUrl}
                               </span>
-                              <span className="text-[10px] text-[#525252] mt-0.5 block">
+                              <span className="text-[10px] text-muted-foreground/50 mt-0.5 block">
                                 Criado em: {new Date(session.created_at).toLocaleString('pt-BR')}
                               </span>
                             </div>
 
                             {session.is_expired ? (
-                              <span className="shrink-0 text-[10px] bg-red-500/10 border border-red-500/20 text-red-400 font-bold px-2 py-0.5 rounded-md">
+                              <span className="shrink-0 text-[10px] bg-destructive/10 border border-destructive/20 text-destructive font-bold px-2 py-0.5 rounded-md">
                                 Expirado
                               </span>
                             ) : (
@@ -744,17 +926,17 @@ export default function App() {
                           </div>
 
                           {/* Middle details metrics */}
-                          <div className="flex flex-wrap items-center gap-3 text-[11px] text-[#a3a3a3] bg-[#141414]/40 p-2.5 rounded-lg border border-[#262626]/50">
-                            <span className="font-medium text-white">
+                          <div className="flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground bg-card/40 p-2.5 rounded-lg border border-border/50">
+                            <span className="font-medium text-foreground">
                               {session.files.length} arquivo(s)
                             </span>
-                            <span className="text-[#525252]">•</span>
+                            <span className="text-muted-foreground/30">•</span>
                             <span>
                               {formatBytes(session.files.reduce((acc: number, f: any) => acc + (f.size_bytes || 0), 0))}
                             </span>
-                            <span className="text-[#525252]">•</span>
-                            <span className="flex items-center gap-1 font-mono text-white text-xs py-0.5 px-1.5 bg-[#6366f1]/10 border border-[#6366f1]/20 rounded">
-                              <Download className="w-3 h-3 text-[#818cf8]" />
+                            <span className="text-muted-foreground/30">•</span>
+                            <span className="flex items-center gap-1 font-mono text-foreground text-xs py-0.5 px-1.5 bg-primary/10 border border-primary/20 rounded">
+                              <Download className="w-3 h-3 text-primary" />
                               {session.download_count} download(s)
                             </span>
 
@@ -762,7 +944,7 @@ export default function App() {
                             {(session.self_destruct || session.has_password) && (
                               <div className="flex items-center gap-1.5 ml-auto shrink-0">
                                 {session.self_destruct && (
-                                  <span className="flex items-center gap-0.5 text-[9px] bg-indigo-500/15 border border-indigo-500/25 text-[#7f83f8] px-1.5 py-0.5 rounded" title="Autodestruição ativa">
+                                  <span className="flex items-center gap-0.5 text-[9px] bg-primary/15 border border-primary/25 text-primary px-1.5 py-0.5 rounded" title="Autodestruição ativa">
                                     <Shield className="w-2.5 h-2.5" />
                                     autodestrói
                                   </span>
@@ -779,11 +961,11 @@ export default function App() {
 
                           {/* Expiry countdown if active */}
                           {!session.is_expired && (
-                            <div className="text-[11px] text-[#a3a3a3] flex items-center justify-between gap-2 pt-1.5 border-t border-[#262626]/40">
+                            <div className="text-[11px] text-muted-foreground flex items-center justify-between gap-2 pt-1.5 border-t border-border/40">
                               <span className="flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5 text-indigo-400" />
+                                <Clock className="w-3.5 h-3.5 text-primary" />
                                 <span>Expira em:</span>
-                                <CountdownTimer expiresAt={session.expires_at} className="font-semibold text-white bg-transparent border-none p-0" />
+                                <CountdownTimer expiresAt={session.expires_at} className="font-semibold text-foreground bg-transparent border-none p-0" />
                               </span>
 
                               {/* Action triggers */}
@@ -797,7 +979,7 @@ export default function App() {
                                       toast.success('Link copiado com sucesso! 🔗');
                                     } catch (_) {}
                                   }}
-                                  className="text-[11px] font-bold text-[#818cf8] hover:text-white px-2.5 py-1 bg-[#6366f1]/10 hover:bg-[#6366f1] border border-[#6366f1]/20 rounded-lg transition-all cursor-pointer"
+                                  className="text-[11px] font-bold text-primary hover:text-primary-foreground px-2.5 py-1 bg-primary/10 hover:bg-primary border border-primary/20 rounded-lg transition-all cursor-pointer"
                                 >
                                   Copiar
                                 </Button>
@@ -805,7 +987,7 @@ export default function App() {
                                   type="button"
                                   size="xs"
                                   onClick={() => handleRevokeSession(session.share_token)}
-                                  className="text-[11px] font-bold text-red-400 hover:text-white px-2.5 py-1 bg-red-500/10 hover:bg-red-500 border border-red-500/20 rounded-lg transition-all cursor-pointer"
+                                  className="text-[11px] font-bold text-destructive hover:text-destructive-foreground px-2.5 py-1 bg-destructive/10 hover:bg-destructive border border-destructive/20 rounded-lg transition-all cursor-pointer"
                                 >
                                   Revogar Link
                                 </Button>
@@ -814,7 +996,7 @@ export default function App() {
                           )}
 
                           {session.is_expired && (
-                            <div className="text-[11px] text-[#525252] italic">
+                            <div className="text-[11px] text-muted-foreground/50 italic">
                               Os arquivos expiraram e não podem ser mais recuperados.
                             </div>
                           )}
@@ -831,19 +1013,19 @@ export default function App() {
                 {/* Introduction texts */}
                 <div className="text-center space-y-2 mb-8 animate-in fade-in duration-300">
                   {user && (
-                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-[#6366f1]/10 border border-[#6366f1]/20 text-[#818cf8] font-medium text-xs rounded-full mb-2 select-none animate-in slide-in-from-top-2 duration-300">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-primary/10 border border-primary/20 text-primary font-medium text-xs rounded-full mb-2 select-none animate-in slide-in-from-top-2 duration-300">
                       Olá, {user.user_metadata?.name || user.user_metadata?.full_name || user.email?.split('@')[0]}! 👋
                     </div>
                   )}
                   <h1 className="text-3xl font-extrabold tracking-tight text-white md:text-4xl">
                     Compartilhe temporariamente sem limites
                   </h1>
-                  <p className="text-sm text-[#a3a3a3] max-w-md mx-auto leading-relaxed">
+                  <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
                     Envie os seus arquivos com expiração automática. Rápido, seguro e privado.
                   </p>
                 </div>
 
-                <Card className="bg-[#141414] border-[#262626] p-5 rounded-2xl shadow-xl space-y-5 border-none">
+                <Card className="bg-card border border-border p-5 rounded-2xl shadow-xl space-y-5">
                   
                   {/* Drag drop dropzone */}
                   <UploadZone
@@ -861,14 +1043,14 @@ export default function App() {
 
                   {/* Setup Expiry Options */}
                   {selectedFiles.length > 0 && (
-                    <div className="pt-2 border-t border-[#262626]/40 space-y-4">
+                    <div className="pt-2 border-t border-border/40 space-y-4">
                       <ExpirationSelector value={expiration} onChange={setExpiration} />
 
                       {/* Security and Privacy Options Panel */}
-                      <div className="p-4 bg-[#1e1e1e]/40 border border-[#262626] rounded-xl space-y-4">
-                        <div className="flex items-center gap-1.5 pb-2 border-b border-[#262626]/45">
-                          <Shield className="w-3.5 h-3.5 text-[#6366f1]" />
-                          <span className="text-xs font-semibold text-white uppercase tracking-wider">
+                      <div className="p-4 bg-background/40 border border-border rounded-xl space-y-4">
+                        <div className="flex items-center gap-1.5 pb-2 border-b border-border/45">
+                          <Shield className="w-3.5 h-3.5 text-primary" />
+                          <span className="text-xs font-semibold text-foreground uppercase tracking-wider">
                             Segurança & Privacidade
                           </span>
                         </div>
@@ -876,10 +1058,10 @@ export default function App() {
                         {/* Self Destruct Switch */}
                         <div className="flex items-start justify-between gap-4">
                           <div className="space-y-0.5">
-                            <Label className="text-sm font-semibold text-[#ffffff] cursor-pointer flex items-center gap-1.5" htmlFor="self-destruct-toggle">
+                            <Label className="text-sm font-semibold text-foreground cursor-pointer flex items-center gap-1.5" htmlFor="self-destruct-toggle">
                               Autodestruição (Após Download)
                             </Label>
-                            <p className="text-[11px] text-[#a3a3a3] leading-relaxed">
+                            <p className="text-[11px] text-muted-foreground leading-relaxed">
                               O link e os arquivos serão apagados do servidor de forma definitiva assim que o destinatário concluir o download.
                             </p>
                           </div>
@@ -894,13 +1076,13 @@ export default function App() {
                         </div>
 
                         {/* Password Protection input */}
-                        <div className="space-y-2 pt-2 border-t border-[#262626]/40">
+                        <div className="space-y-2 pt-2 border-t border-border/40">
                           <div className="flex items-center justify-between gap-4">
                             <div className="space-y-0.5">
-                              <label className="text-sm font-semibold text-[#ffffff] flex items-center gap-1.5" htmlFor="password-input">
+                              <label className="text-sm font-semibold text-foreground flex items-center gap-1.5" htmlFor="password-input">
                                 Definir Senha de Acesso (4 a 6 dígitos)
                               </label>
-                              <p className="text-[11px] text-[#a3a3a3] leading-relaxed">
+                              <p className="text-[11px] text-muted-foreground leading-relaxed">
                                 Crie uma senha numérica de 4 a 6 dígitos para este link. Destinatários precisarão digitá-la.
                               </p>
                             </div>
@@ -912,15 +1094,15 @@ export default function App() {
                             placeholder="Deixe em branco para livre acesso"
                             value={password}
                             onChange={(e) => setPassword(e.target.value.replace(/\D/g, ''))} // only digits allowed
-                            className="w-full bg-[#0a0a0a] border border-[#262626] text-[#ffffff] rounded-xl py-2 px-3 text-xs tracking-tight placeholder:text-[#525252] focus:outline-none focus:border-[#6366f1] transition-all"
+                            className="w-full bg-background border border-border text-foreground rounded-xl py-2 px-3 text-xs tracking-tight placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary transition-all"
                           />
                         </div>
                       </div>
 
                       {/* Display aggregate size indicators */}
-                      <div className="p-3.5 bg-[#0a0a0a]/50 rounded-xl border border-[#262626]/60 flex items-center justify-between text-xs text-[#a3a3a3]">
+                      <div className="p-3.5 bg-background/50 rounded-xl border border-border/60 flex items-center justify-between text-xs text-muted-foreground">
                         <span>Tamanho Combinado:</span>
-                        <span className="font-mono text-white font-medium">
+                        <span className="font-mono text-foreground font-medium">
                           {formatBytes(totalBytesSelected)} / 50 MB
                         </span>
                       </div>
@@ -937,18 +1119,37 @@ export default function App() {
 
                       {/* General Transfer progress overlay if uploading */}
                       {uploadLoading && (
-                        <div className="space-y-2 pt-1 animate-pulse">
-                          <div className="flex items-center justify-between text-xs text-[#a3a3a3]">
-                            <span>Enviando pacote de transferência...</span>
-                            <span className="font-mono text-white font-semibold">{uploadProgress}%</span>
+                        <div className="space-y-2.5 pt-1">
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1.5 font-medium">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary shrink-0" />
+                              <span>Enviando arquivos...</span>
+                            </span>
+                            <span className="font-mono text-foreground font-bold">{uploadProgress}%</span>
                           </div>
-                          <Progress value={uploadProgress} className="h-1.5 bg-[#0a0a0a]" />
+                          <Progress value={uploadProgress} className="h-2 bg-background rounded-full overflow-hidden" />
+                          
+                          {(uploadSpeed || uploadEta) && (
+                            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground/85 font-mono pt-0.5 px-0.5">
+                              {uploadSpeed && (
+                                <span className="flex items-center gap-1.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                  <span>Velocidade: <strong>{uploadSpeed}</strong></span>
+                                </span>
+                              )}
+                              {uploadEta && (
+                                <span className="text-right">
+                                  Tempo restante: <strong className="text-primary">{uploadEta}</strong>
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       )}
 
                       {/* Throwing backend errors */}
                       {uploadError && (
-                        <div className="flex items-start gap-2.5 bg-red-500/10 text-red-500 border border-red-500/20 p-3.5 rounded-xl text-xs leading-relaxed animate-shake">
+                        <div className="flex items-start gap-2.5 bg-destructive/10 text-destructive border border-destructive/20 p-3.5 rounded-xl text-xs leading-relaxed animate-shake">
                           <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                           <span>{uploadError}</span>
                         </div>
@@ -960,7 +1161,7 @@ export default function App() {
                         type="button"
                         onClick={handleStartUpload}
                         disabled={uploadLoading || selectedFiles.length === 0}
-                        className="w-full py-3.5 bg-[#6366f1] hover:bg-[#4f46e5] text-[#ffffff] rounded-xl font-bold text-sm tracking-wide transition-all select-none hover:scale-[1.005] active:scale-[0.995] cursor-pointer shadow-lg disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2 border-none"
+                        className="w-full py-3.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl font-bold text-sm tracking-wide transition-all select-none hover:scale-[1.005] active:scale-[0.995] cursor-pointer shadow-lg disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2 border-none"
                       >
                         {uploadLoading ? (
                           <>
@@ -983,17 +1184,19 @@ export default function App() {
       </main>
 
       {/* 3. LOWER FOOTER */}
-      <footer id="app-footer" className="max-w-4xl w-full mx-auto px-4 py-6 border-t border-[#262626]/40 text-center text-xs text-[#a3a3a3] flex flex-col sm:flex-row items-center justify-between gap-3">
+      <footer id="app-footer" className="max-w-2xl w-full mx-auto px-4 py-6 border-t border-border/45 text-center text-xs text-muted-foreground flex flex-col sm:flex-row items-center justify-between gap-3 mt-auto">
         <p className="font-mono text-[11px]">
           Dropzeo © 2026. Todos os arquivos são auto-destruídos após o tempo estipulado.
         </p>
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-1">
-            <Shield className="w-3.5 h-3.5 text-[#6366f1]" />
+            <Shield className="w-3.5 h-3.5 text-primary animate-pulse" />
             <span>Encriptação local e na nuvem</span>
           </span>
         </div>
       </footer>
+
+      </div> {/* Close 3. MAIN WORKSPACE */}
 
       {/* AUTHENTICATION MODAL */}
       <AuthModal

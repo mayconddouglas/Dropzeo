@@ -25,26 +25,26 @@ export default function ShareLink({ token, expiresAt, onReset }: ShareLinkProps)
   };
 
   return (
-    <div id="share-link-view" className="bg-[#141414] border border-[#262626] rounded-2xl p-6 text-center space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
+    <div id="share-link-view" className="bg-card border border-border rounded-2xl p-6 text-center space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300 font-sans">
       
       {/* Icon header */}
       <div className="flex flex-col items-center gap-3">
-        <div className="p-4 bg-[#6366f1]/10 rounded-full text-[#6366f1] border border-[#6366f1]/20">
+        <div className="p-4 bg-primary/15 rounded-full text-primary border border-primary/25">
           <Share2 className="w-8 h-8 animate-pulse" />
         </div>
         <div>
-          <h3 className="text-xl font-bold text-white tracking-tight">Seu link está pronto!</h3>
-          <p className="text-xs text-[#a3a3a3] mt-1">
+          <h3 className="text-xl font-bold text-foreground tracking-tight">Seu link está pronto!</h3>
+          <p className="text-xs text-muted-foreground mt-1">
             Qualquer pessoa com acesso a este link poderá baixar seus arquivos.
           </p>
         </div>
       </div>
 
       {/* URL Link Box */}
-      <div className="bg-[#0a0a0a] border border-[#262626] rounded-xl p-3 flex items-center justify-between gap-3 max-w-md mx-auto">
+      <div className="bg-background border border-border rounded-xl p-3 flex items-center justify-between gap-3 max-w-md mx-auto">
         <div className="flex items-center gap-2 min-w-0 flex-1 text-left pl-1">
-          <CornerDownRight className="w-4 h-4 text-[#6366f1] shrink-0" />
-          <span className="font-mono text-xs md:text-sm text-white truncate select-all">
+          <CornerDownRight className="w-4 h-4 text-primary shrink-0" />
+          <span className="font-mono text-xs md:text-sm text-foreground truncate select-all">
             {shareUrl}
           </span>
         </div>
@@ -54,7 +54,7 @@ export default function ShareLink({ token, expiresAt, onReset }: ShareLinkProps)
           className={`flex items-center gap-1.5 py-1.5 px-3 rounded-lg text-xs font-semibold cursor-pointer transition-all ${
             copied
               ? 'bg-[#22c55e]/10 text-[#22c55e] border border-[#22c55e]/30'
-              : 'bg-[#6366f1] hover:bg-[#4f46e5] text-white'
+              : 'bg-primary hover:bg-primary/90 text-primary-foreground'
           }`}
         >
           {copied ? (
@@ -72,7 +72,7 @@ export default function ShareLink({ token, expiresAt, onReset }: ShareLinkProps)
       </div>
 
       {/* Countdown status */}
-      <div className="flex justify-center border-t border-[#262626]/60 pt-4 max-w-sm mx-auto">
+      <div className="flex justify-center border-t border-border/60 pt-4 max-w-sm mx-auto">
         <CountdownTimer expiresAt={expiresAt} />
       </div>
 
@@ -81,9 +81,9 @@ export default function ShareLink({ token, expiresAt, onReset }: ShareLinkProps)
         <button
           id="new-upload-btn"
           onClick={onReset}
-          className="inline-flex items-center gap-2 py-2.5 px-5 bg-[#141414] hover:bg-[#202020] border border-[#262626] text-white hover:text-white rounded-xl text-xs md:text-sm font-medium transition-all cursor-pointer"
+          className="inline-flex items-center gap-2 py-2.5 px-5 bg-card hover:bg-muted border border-border text-foreground hover:text-foreground rounded-xl text-xs md:text-sm font-medium transition-all cursor-pointer"
         >
-          <RotateCcw className="w-4 h-4 text-[#a3a3a3]" />
+          <RotateCcw className="w-4 h-4 text-muted-foreground" />
           <span>Novo Upload</span>
         </button>
       </div>

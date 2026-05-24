@@ -45,8 +45,8 @@ export default function CountdownTimer({ expiresAt, onExpire, className }: Count
 
   if (timeLeft.expired) {
     return (
-      <div className={`flex items-center gap-1.5 text-xs font-semibold text-[#ef4444] ${className}`}>
-        <span className="w-1.5 h-1.5 rounded-full bg-[#ef4444] animate-pulse" />
+      <div className={`flex items-center gap-1.5 text-xs font-semibold text-destructive ${className}`}>
+        <span className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" />
         <span>LINK EXPIRADO</span>
       </div>
     );
@@ -56,10 +56,10 @@ export default function CountdownTimer({ expiresAt, onExpire, className }: Count
   const formatNum = (num: number) => String(num).padStart(2, '0');
 
   return (
-    <div id="countdown-timer-display" className={`flex items-center gap-1.5 text-xs text-[#a3a3a3] ${className}`}>
-      <Clock className="w-3.5 h-3.5 text-[#6366f1]" />
-      <span className="font-mono text-white font-medium text-xs">
-        Expira em: <strong className="text-[#6366f1]">{formatNum(timeLeft.m)}m {formatNum(timeLeft.s)}s</strong>
+    <div id="countdown-timer-display" className={`flex items-center gap-1.5 text-xs text-muted-foreground ${className}`}>
+      <Clock className="w-3.5 h-3.5 text-primary" />
+      <span className="font-mono text-foreground font-medium text-xs">
+        Expira em: <strong className="text-primary">{formatNum(timeLeft.m)}m {formatNum(timeLeft.s)}s</strong>
       </span>
     </div>
   );

@@ -62,7 +62,7 @@ export default function UploadZone({ onFilesSelected, maxSizeBytes, totalSizeByt
   };
 
   return (
-    <div className="w-full flex flex-col gap-3">
+    <div className="w-full flex flex-col gap-3 font-sans">
       <div
         id="drag-drop-zone"
         onDragEnter={handleDrag}
@@ -72,8 +72,8 @@ export default function UploadZone({ onFilesSelected, maxSizeBytes, totalSizeByt
         onClick={() => fileInputRef.current?.click()}
         className={`w-full min-h-[220px] rounded-xl border-2 border-dashed flex flex-col items-center justify-center p-6 text-center transition-all duration-200 cursor-pointer ${
           isDragActive
-            ? 'border-[#6366f1] bg-[#6366f1]/5 text-white scale-[0.99]'
-            : 'border-[#262626] bg-[#141414]/40 hover:border-[#6366f1]/60 text-[#a3a3a3] hover:text-white'
+            ? 'border-primary bg-primary/5 text-foreground scale-[0.99]'
+            : 'border-border bg-card/45 hover:border-primary/60 text-muted-foreground hover:text-foreground'
         }`}
       >
         <input
@@ -86,14 +86,14 @@ export default function UploadZone({ onFilesSelected, maxSizeBytes, totalSizeByt
         />
 
         <div className="flex flex-col items-center gap-4">
-          <div className={`p-4 rounded-full bg-[#141414] border border-[#262626] text-[#6366f1] transition-transform duration-300 ${isDragActive ? 'scale-110' : ''}`}>
+          <div className={`p-4 rounded-full bg-card border border-border text-primary transition-transform duration-300 ${isDragActive ? 'scale-110' : ''}`}>
             <UploadCloud className="w-8 h-8" />
           </div>
           <div className="space-y-1">
-            <p className="font-medium text-sm md:text-base text-white">
+            <p className="font-medium text-sm md:text-base text-foreground">
               Solte seus arquivos aqui ou clique para selecionar
             </p>
-            <p className="text-xs text-[#a3a3a3]">
+            <p className="text-xs text-muted-foreground">
               Qualquer formato é aceito. Limite de até 50MB por link (Versão Beta).
             </p>
           </div>
@@ -101,7 +101,7 @@ export default function UploadZone({ onFilesSelected, maxSizeBytes, totalSizeByt
       </div>
 
       {errorNotice && (
-        <div id="upload-zone-error" className="flex items-start gap-2 bg-[#ef4444]/10 text-[#ef4444] border border-[#ef4444]/20 p-3 rounded-xl text-xs">
+        <div id="upload-zone-error" className="flex items-start gap-2 bg-destructive/10 text-destructive border border-destructive/20 p-3 rounded-xl text-xs">
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{errorNotice}</span>
         </div>

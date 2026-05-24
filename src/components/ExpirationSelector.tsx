@@ -15,11 +15,11 @@ export default function ExpirationSelector({ value, onChange }: ExpirationSelect
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-xs font-medium text-[#a3a3a3] flex items-center gap-1.5">
-        <Clock className="w-3.5 h-3.5 text-[#6366f1]" />
+      <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+        <Clock className="w-3.5 h-3.5 text-primary" />
         <span>Tempo de expiração dos arquivos</span>
       </label>
-      <div className="grid grid-cols-3 gap-2 bg-[#0a0a0a] border border-[#262626] p-1 rounded-xl">
+      <div className="grid grid-cols-3 gap-2 bg-background border border-border p-1 rounded-xl">
         {options.map((option) => {
           const isActive = value === option.value;
           return (
@@ -30,8 +30,8 @@ export default function ExpirationSelector({ value, onChange }: ExpirationSelect
               onClick={() => onChange(option.value)}
               className={`py-2 px-3 text-xs md:text-sm font-medium rounded-lg transition-all duration-200 cursor-pointer ${
                 isActive
-                  ? 'bg-[#6366f1] text-white shadow-md'
-                  : 'text-[#a3a3a3] hover:text-white hover:bg-[#141414]'
+                  ? 'bg-primary text-primary-foreground shadow-md'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
               {option.label}

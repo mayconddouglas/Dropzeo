@@ -106,22 +106,22 @@ export default function AuthModal({ isOpen, onClose, onSuccess, title }: AuthMod
       />
 
       {/* Modal Dialog */}
-      <div className="relative w-full max-w-md overflow-hidden bg-[#141414] border border-[#262626] rounded-xl p-6 shadow-2xl z-10 animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative w-full max-w-md overflow-hidden bg-card border border-border rounded-xl p-6 shadow-2xl z-10 animate-in fade-in zoom-in-95 duration-200">
         
         {/* Header */}
         <div className="flex justify-between items-start mb-6">
           <div>
-            <h3 className="text-xl font-semibold text-white tracking-tight flex items-center gap-2">
-              <Shield className="w-5 h-5 text-[#6366f1]" />
+            <h3 className="text-xl font-semibold text-foreground tracking-tight flex items-center gap-2">
+              <Shield className="w-5 h-5 text-primary" />
               {isSignUp ? 'Criar Conta' : 'Entrar no Dropzeo'}
             </h3>
-            <p className="text-xs text-[#a3a3a3] mt-1">
+            <p className="text-xs text-muted-foreground mt-1">
               {title || 'Faça login para gerenciar e enviar arquivos maiores'}
             </p>
           </div>
           <button 
             onClick={onClose}
-            className="text-[#a3a3a3] hover:text-white transition-colors p-1 hover:bg-[#262626] rounded-md"
+            className="text-muted-foreground hover:text-foreground transition-colors p-1 hover:bg-muted rounded-md"
             aria-label="Close"
           >
             <X className="w-5 h-5" />
@@ -132,18 +132,18 @@ export default function AuthModal({ isOpen, onClose, onSuccess, title }: AuthMod
         <form onSubmit={handleSubmit} className="space-y-4">
           {isSignUp && (
             <div>
-              <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5" htmlFor="name-input">
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5" htmlFor="name-input">
                 Seu Nome Completo
               </label>
               <div className="relative">
-                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-[#a3a3a3]">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
                   <User className="w-4 h-4" />
                 </span>
                 <input
                   id="name-input"
                   type="text"
                   required={isSignUp}
-                  className="w-full bg-[#0a0a0a] border border-[#262626] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#6366f1] transition-all"
+                  className="w-full bg-background border border-border rounded-lg py-2.5 pl-10 pr-4 text-sm text-foreground focus:outline-none focus:border-primary transition-all"
                   placeholder="Seu nome ou apelido"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -153,18 +153,18 @@ export default function AuthModal({ isOpen, onClose, onSuccess, title }: AuthMod
           )}
 
           <div>
-            <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5" htmlFor="email-input">
+            <label className="block text-xs font-medium text-muted-foreground mb-1.5" htmlFor="email-input">
               Endereço de E-mail
             </label>
             <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-[#a3a3a3]">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
                 <Mail className="w-4 h-4" />
               </span>
               <input
                 id="email-input"
                 type="email"
                 required
-                className="w-full bg-[#0a0a0a] border border-[#262626] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#6366f1] transition-all"
+                className="w-full bg-background border border-border rounded-lg py-2.5 pl-10 pr-4 text-sm text-foreground focus:outline-none focus:border-primary transition-all"
                 placeholder="nome@exemplo.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -173,18 +173,18 @@ export default function AuthModal({ isOpen, onClose, onSuccess, title }: AuthMod
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-[#a3a3a3] mb-1.5" htmlFor="password-input">
+            <label className="block text-xs font-medium text-muted-foreground mb-1.5" htmlFor="password-input">
               Senha
             </label>
             <div className="relative">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-[#a3a3a3]">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
                 <Lock className="w-4 h-4" />
               </span>
               <input
                 id="password-input"
                 type="password"
                 required
-                className="w-full bg-[#0a0a0a] border border-[#262626] rounded-lg py-2.5 pl-10 pr-4 text-sm text-white focus:outline-none focus:border-[#6366f1] transition-all"
+                className="w-full bg-background border border-border rounded-lg py-2.5 pl-10 pr-4 text-sm text-foreground focus:outline-none focus:border-primary transition-all"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -194,7 +194,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess, title }: AuthMod
 
           {message && (
             <div className={`p-3 rounded-lg text-xs leading-relaxed ${
-              message.type === 'success' ? 'bg-[#22c55e]/10 text-[#22c55e] border border-[#22c55e]/20' : 'bg-[#ef4444]/10 text-[#ef4444] border border-[#ef4444]/20'
+              message.type === 'success' ? 'bg-[#22c55e]/10 text-[#22c55e] border border-[#22c55e]/20' : 'bg-destructive/10 text-destructive border border-destructive/20'
             }`}>
               {message.text}
             </div>
@@ -204,7 +204,7 @@ export default function AuthModal({ isOpen, onClose, onSuccess, title }: AuthMod
             id="auth-submit-btn"
             type="submit"
             disabled={loading}
-            className="w-full flex items-center justify-center gap-2 bg-[#6366f1] hover:bg-[#4f46e5] text-white py-2.5 px-4 rounded-lg font-medium text-sm transition-all focus:ring-2 focus:ring-[#6366f1]/50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white py-2.5 px-4 rounded-lg font-medium text-sm transition-all focus:ring-2 focus:ring-primary/50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -218,13 +218,13 @@ export default function AuthModal({ isOpen, onClose, onSuccess, title }: AuthMod
         </form>
 
         {/* Footer toggler */}
-        <div className="mt-6 pt-4 border-t border-[#262626] text-center text-xs">
+        <div className="mt-6 pt-4 border-t border-border text-center text-xs">
           <button
             onClick={() => {
               setIsSignUp(!isSignUp);
               setMessage(null);
             }}
-            className="text-[#a3a3a3] hover:text-white transition-colors"
+            className="text-muted-foreground hover:text-foreground transition-colors"
           >
             {isSignUp ? 'Já tem uma conta? Faça Login' : 'Não tem uma conta ainda? Cadastre-se'}
           </button>
