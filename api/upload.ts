@@ -72,6 +72,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
     }
 
+    // Resolve user_id from Authorization header if present
+    let userId: string | null = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.replace('Bearer ', '');
+      const supabaseAdmin = getSupabaseAdmin();
+      const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+      if (user) userId = user.id;
+    }
+
     const expirationOpt = fields.expiration || '15min';
     const selfDestructOpt = fields.self_destruct === 'true';
     const passwordOpt = fields.password || null;
@@ -92,6 +102,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const supabaseAdmin = getSupabaseAdmin();
     const shareToken = generateToken(10);
 
+    // Save session WITH user_id so it shows in "Meus Links"
     const { data: session, error: sessionError } = await supabaseAdmin
       .from('upload_sessions')
       .insert({
@@ -99,7 +110,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         expires_at: expiresAt.toISOString(),
         is_expired: false,
         self_destruct: selfDestructOpt,
-        password: passwordOpt
+        password: passwordOpt,
+        user_id: userId,        // <-- vincula ao usuário logado
       })
       .select('id')
       .single();
