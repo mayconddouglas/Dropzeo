@@ -1,5 +1,6 @@
 import { ExpirationOption } from '../types.js';
 import { Clock } from 'lucide-react';
+import { motion } from 'motion/react';
 
 interface ExpirationSelectorProps {
   value: ExpirationOption;
@@ -15,11 +16,11 @@ export default function ExpirationSelector({ value, onChange }: ExpirationSelect
 
   return (
     <div className="flex flex-col gap-2">
-      <label className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+      <label className="text-xs font-semibold text-muted-foreground flex items-center gap-1.5 uppercase tracking-wide">
         <Clock className="w-3.5 h-3.5 text-primary" />
-        <span>Tempo de expiração dos arquivos</span>
+        <span>Expiração do Link</span>
       </label>
-      <div className="grid grid-cols-3 gap-2 bg-background border border-border p-1 rounded-xl">
+      <div className="grid grid-cols-3 gap-2 bg-muted/30 border border-border p-1.5 rounded-2xl relative">
         {options.map((option) => {
           const isActive = value === option.value;
           return (
@@ -28,13 +29,20 @@ export default function ExpirationSelector({ value, onChange }: ExpirationSelect
               type="button"
               id={`expiry-btn-${option.value}`}
               onClick={() => onChange(option.value)}
-              className={`py-2 px-3 text-xs md:text-sm font-medium rounded-lg transition-all duration-200 cursor-pointer ${
+              className={`relative py-2.5 px-3 text-xs md:text-sm font-medium rounded-xl transition-colors duration-200 cursor-pointer ${
                 isActive
-                  ? 'bg-primary text-primary-foreground shadow-md'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  ? 'text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-background/50'
               }`}
             >
-              {option.label}
+              {isActive && (
+                <motion.div
+                  layoutId="active-expiry-pill"
+                  className="absolute inset-0 bg-primary rounded-xl"
+                  transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                />
+              )}
+              <span className="relative z-10">{option.label}</span>
             </button>
           );
         })}

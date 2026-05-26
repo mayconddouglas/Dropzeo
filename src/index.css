@@ -12,24 +12,24 @@
 }
 
 :root {
-  --background: #fdfcfb; /* Soft warm ivory / sand background */
-  --foreground: #1e242b; /* Soft charcoal text */
-  --card: #ffffff; /* Crisp white cards */
-  --card-foreground: #1e242b;
+  --background: #fafafa; /* Zinc 50 */
+  --foreground: #09090b; /* Zinc 950 */
+  --card: #ffffff; /* Crisp white */
+  --card-foreground: #09090b;
   --popover: #ffffff;
-  --popover-foreground: #1e242b;
-  --primary: #6366f1; /* Soft royal periwinkle blue */
-  --primary-foreground: #ffffff;
-  --secondary: #f4f3f0; /* Gentle sandy gray */
-  --secondary-foreground: #2d3748;
-  --muted: #f8f7f4;
-  --muted-foreground: #6b7280;
-  --accent: #e0e7ff; /* Very soft pastel periwinkle accent */
-  --accent-foreground: #4f46e5;
+  --popover-foreground: #09090b;
+  --primary: #18181b; /* Zinc 900 */
+  --primary-foreground: #fafafa; /* Zinc 50 */
+  --secondary: #f4f4f5; /* Zinc 100 */
+  --secondary-foreground: #18181b; /* Zinc 900 */
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a; /* Zinc 500 */
+  --accent: #f4f4f5;
+  --accent-foreground: #09090b;
   --destructive: #ef4444;
-  --border: #e9e7e2; /* Very elegant thin border in neutral sand tone */
-  --input: #e9e7e2;
-  --ring: rgba(99, 102, 241, 0.15);
+  --border: #e4e4e7; /* Zinc 200 */
+  --input: #e4e4e7;
+  --ring: #18181b;
   --radius: 1rem;
   --chart-1: oklch(0.845 0.143 164.978);
   --chart-2: oklch(0.696 0.17 162.48);
@@ -37,13 +37,13 @@
   --chart-4: oklch(0.508 0.118 165.612);
   --chart-5: oklch(0.432 0.095 166.913);
   --sidebar: #ffffff;
-  --sidebar-foreground: #1e242b;
-  --sidebar-primary: #6366f1;
+  --sidebar-foreground: #09090b;
+  --sidebar-primary: #18181b;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #f8f7f4;
-  --sidebar-accent-foreground: #1e242b;
-  --sidebar-border: #e9e7e2;
-  --sidebar-ring: rgba(99, 102, 241, 0.15);
+  --sidebar-accent: #f4f4f5;
+  --sidebar-accent-foreground: #09090b;
+  --sidebar-border: #e4e4e7;
+  --sidebar-ring: rgba(24, 24, 27, 0.15);
 }
 
 body {

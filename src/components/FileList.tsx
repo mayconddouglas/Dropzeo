@@ -1,6 +1,7 @@
 import { SelectedFile } from '../types.js';
 import { formatBytes } from '../lib/utils.js';
 import { File, Trash2, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface FileListProps {
   files: SelectedFile[];
@@ -12,17 +13,22 @@ export default function FileList({ files, onRemoveFile, isUploading }: FileListP
   if (files.length === 0) return null;
 
   return (
-    <div className="space-y-2 mt-4 font-sans">
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-2 mt-4 font-sans">
       <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
         Arquivos Selecionados ({files.length})
       </h4>
       <div className="max-h-[250px] overflow-y-auto pr-1 space-y-2 divide-y-0 scrollbar-thin">
+        <AnimatePresence>
         {files.map((selected) => {
           return (
-            <div
+            <motion.div
+              layout
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95, height: 0, margin: 0, padding: 0 }}
               key={selected.id}
               id={`file-item-${selected.id}`}
-              className="flex flex-col gap-2 p-3 bg-card border border-border rounded-xl transition-all duration-200"
+              className="flex flex-col gap-2 p-3.5 bg-background/50 backdrop-blur-sm border border-border/50 rounded-2xl transition-all duration-300 hover:bg-background"
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -60,7 +66,7 @@ export default function FileList({ files, onRemoveFile, isUploading }: FileListP
                   )}
 
                   {/* Trash remover */}
-                  {!isUploading && (
+                  {!isUploading && selected.status !== 'completed' && (
                     <button
                       id={`remove-file-btn-${selected.id}`}
                       onClick={() => onRemoveFile(selected.id)}
@@ -82,10 +88,11 @@ export default function FileList({ files, onRemoveFile, isUploading }: FileListP
                   />
                 </div>
               )}
-            </div>
+            </motion.div>
           );
         })}
+        </AnimatePresence>
       </div>
-    </div>
+    </motion.div>
   );
 }

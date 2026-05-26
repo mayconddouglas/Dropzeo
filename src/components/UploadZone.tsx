@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { UploadCloud, File, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 
 interface UploadZoneProps {
   onFilesSelected: (files: FileList | File[]) => void;
@@ -63,17 +64,19 @@ export default function UploadZone({ onFilesSelected, maxSizeBytes, totalSizeByt
 
   return (
     <div className="w-full flex flex-col gap-3 font-sans">
-      <div
+      <motion.div
+        whileHover={{ scale: 1.01 }}
+        whileTap={{ scale: 0.99 }}
         id="drag-drop-zone"
         onDragEnter={handleDrag}
         onDragOver={handleDrag}
         onDragLeave={handleDrag}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
-        className={`w-full min-h-[220px] rounded-xl border-2 border-dashed flex flex-col items-center justify-center p-6 text-center transition-all duration-200 cursor-pointer ${
+        className={`w-full min-h-[220px] rounded-3xl border-dashed flex flex-col items-center justify-center p-6 text-center transition-all duration-500 cursor-pointer ${
           isDragActive
-            ? 'border-primary bg-primary/5 text-foreground scale-[0.99]'
-            : 'border-border bg-card/45 hover:border-primary/60 text-muted-foreground hover:text-foreground'
+            ? 'border-[1.5px] border-primary bg-primary/5 text-foreground scale-[0.99] shadow-inner'
+            : 'border border-border bg-background hover:bg-muted/30 text-muted-foreground hover:text-foreground shadow-sm'
         }`}
       >
         <input
@@ -86,26 +89,28 @@ export default function UploadZone({ onFilesSelected, maxSizeBytes, totalSizeByt
         />
 
         <div className="flex flex-col items-center gap-4">
-          <div className={`p-4 rounded-full bg-card border border-border text-primary transition-transform duration-300 ${isDragActive ? 'scale-110' : ''}`}>
+          <motion.div animate={{ scale: isDragActive ? 1.1 : 1, y: isDragActive ? -5 : 0 }} className="p-4 rounded-full bg-background border border-border shadow-sm text-primary transition-transform duration-300">
             <UploadCloud className="w-8 h-8" />
-          </div>
+          </motion.div>
           <div className="space-y-1">
-            <p className="font-medium text-sm md:text-base text-foreground">
+            <p className="font-semibold text-sm md:text-base text-foreground tracking-tight">
               Solte seus arquivos aqui ou clique para selecionar
             </p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground/80 font-medium">
               Qualquer formato é aceito. Limite de até 50MB por link (Versão Beta).
             </p>
           </div>
         </div>
-      </div>
+      </motion.div>
 
+      <AnimatePresence>
       {errorNotice && (
-        <div id="upload-zone-error" className="flex items-start gap-2 bg-destructive/10 text-destructive border border-destructive/20 p-3 rounded-xl text-xs">
-          <AlertCircle className="w-4 h-4 shrink-0" />
+        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} id="upload-zone-error" className="flex items-start gap-2 bg-destructive/10 text-destructive border border-destructive/20 p-3 rounded-xl text-xs overflow-hidden">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
           <span>{errorNotice}</span>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }

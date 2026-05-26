@@ -28,6 +28,7 @@ import {
   X
 } from 'lucide-react';
 import JSZip from 'jszip';
+import { motion, AnimatePresence } from 'motion/react';
 
 // shadcn/ui components integration
 import { Button } from '@/components/ui/button';
@@ -494,24 +495,24 @@ export default function App() {
     <div className="flex flex-col h-full bg-card justify-between p-6">
       <div className="space-y-8">
         {/* Branding */}
-        <div className="flex flex-col gap-1">
+        <motion.div initial={{ y: -10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1, duration: 0.5, ease: "easeOut" }} className="flex flex-col gap-1">
           <a href="/" className="flex items-start gap-1.5 group">
             <span className="font-extrabold text-2xl tracking-tight text-foreground leading-none">
               Dropzeo
             </span>
-            <span className="text-[10px] text-muted-foreground font-medium tracking-tight bg-border/30 px-1.5 py-0.5 rounded-md border border-border -mt-1 scale-[0.85] origin-left select-none">
+            <span className="text-[10px] text-muted-foreground font-medium tracking-tight bg-border/40 px-1.5 py-0.5 rounded-md border border-border -mt-1 scale-[0.85] origin-left select-none">
               by <span className="text-primary font-semibold">brazeo.ai</span>
             </span>
           </a>
           <p className="text-[11px] text-muted-foreground leading-snug mt-1">
             Envie arquivos grandes temporariamente sem complicações.
           </p>
-        </div>
+        </motion.div>
 
         {/* Menu Navigation */}
-        <div className="space-y-2.5">
-          <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest px-2">
-            Navegação
+        <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.2, duration: 0.5, ease: "easeOut" }} className="space-y-2.5">
+          <p className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-widest px-2 mb-3">
+            Menu Principal
           </p>
           
           {/* Option: Enviar Arquivos */}
@@ -555,11 +556,11 @@ export default function App() {
               <Lock className="w-3.5 h-3.5 text-muted-foreground/50" />
             )}
           </button>
-        </div>
+        </motion.div>
       </div>
 
       {/* Account Profile Footer Section */}
-      <div className="border-t border-border/60 pt-6">
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="border-t border-border/10 pt-6">
         {authLoading ? (
           <div className="flex items-center justify-center py-2">
             <Loader2 className="w-4 h-4 text-muted-foreground animate-spin" />
@@ -607,28 +608,31 @@ export default function App() {
             </Button>
           </div>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-background text-foreground font-sans flex selection:bg-primary selection:text-primary-foreground">
-      <Toaster position="top-right" richColors />
+    <div className="min-h-screen bg-background text-foreground font-sans flex selection:bg-primary/20 selection:text-primary">
+      <Toaster position="top-right" richColors toastOptions={{ style: { borderRadius: '1rem', border: '1px solid var(--border)', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' } }} />
 
       {/* 1. SIDEBAR FOR DESKTOP (Always visible on md+) */}
-      <aside className="w-72 border-r border-border h-screen sticky top-0 hidden md:flex flex-col justify-between shrink-0 bg-card">
+      <aside className="w-[280px] border-r border-border/30 h-screen sticky top-0 hidden md:flex flex-col justify-between shrink-0 bg-background/60 backdrop-blur-2xl">
         {sidebarContent}
       </aside>
 
       {/* 2. MOBILE DRAWER SIDEBAR WITH OVERLAY */}
+      <AnimatePresence>
       {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 z-50 bg-black/60 md:hidden animate-in fade-in duration-200"
+        <motion.div 
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm md:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
+      </AnimatePresence>
       <aside 
-        className={`fixed top-0 bottom-0 left-0 z-50 w-72 bg-card border-r border-border transition-transform duration-300 md:hidden flex flex-col justify-between ${
+        className={`fixed top-0 bottom-0 left-0 z-50 w-[280px] bg-card border-r border-border transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] md:hidden flex flex-col justify-between ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -647,7 +651,7 @@ export default function App() {
       <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
         
         {/* MOBILE TOP BAR (Only visible on mobile screens) */}
-        <header className="md:hidden border-b border-border/40 py-4 px-6 flex items-center justify-between shrink-0 bg-card/50 backdrop-blur-sm sticky top-0 z-40">
+        <header className="md:hidden border-b border-border/30 py-4 px-6 flex items-center justify-between shrink-0 bg-background/60 backdrop-blur-xl sticky top-0 z-40">
           <a href="/" className="flex items-start gap-1.5 group">
             <span className="font-extrabold text-xl tracking-tight text-foreground leading-none">
               Dropzeo
@@ -700,15 +704,16 @@ export default function App() {
         <main className="max-w-2xl w-full mx-auto px-4 py-8 md:py-16 flex-1 flex flex-col justify-center">
         
         {/* ======================= RECIPIENT SCREEN ======================= */}
+        <AnimatePresence mode="wait">
         {isRecipientView && (
-          <div className="space-y-6">
+          <motion.div key="recipient" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.4, ease: "easeOut" }} className="space-y-6">
             {recipientLoading ? (
               <div className="text-center py-16 space-y-4 bg-card border border-border rounded-2xl">
                 <Loader2 className="w-9 h-9 text-primary animate-spin mx-auto" />
                 <p className="text-sm text-muted-foreground">Localizando arquivos compartilhados...</p>
               </div>
             ) : passwordRequired ? (
-              <div className="bg-card border border-border rounded-2xl p-8 max-w-sm mx-auto space-y-6 text-center shadow-2xl animate-in fade-in zoom-in duration-300">
+              <div className="bg-card/80 backdrop-blur-xl border border-border/40 rounded-3xl p-8 max-w-sm mx-auto space-y-6 text-center shadow-lg animate-in fade-in zoom-in duration-300">
                 <div className="p-3.5 bg-primary/15 border border-primary/25 text-primary rounded-full w-fit mx-auto">
                   <Shield className="w-7 h-7" />
                 </div>
@@ -750,7 +755,7 @@ export default function App() {
                 </form>
               </div>
             ) : recipientError ? (
-              <div className="bg-card border border-border rounded-2xl p-10 text-center space-y-5 animate-in fade-in duration-300">
+              <div className="bg-card/80 backdrop-blur-xl border border-border/40 rounded-3xl p-10 text-center space-y-5 shadow-lg animate-in fade-in duration-300">
                 <div className="p-4 bg-destructive/10 rounded-full w-fit mx-auto text-destructive border border-destructive/20">
                   <AlertCircle className="w-9 h-9" />
                 </div>
@@ -772,7 +777,7 @@ export default function App() {
                 </div>
               </div>
             ) : recipientSession ? (
-              <div className="bg-card border border-border rounded-2xl p-6 space-y-6 shadow-xl animate-in fade-in duration-300">
+              <div className="bg-card/80 backdrop-blur-xl border border-border/40 rounded-3xl p-6 sm:p-8 space-y-6 shadow-lg animate-in fade-in duration-300">
                 
                 {/* Countdown / Stats header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/60">
@@ -835,12 +840,14 @@ export default function App() {
                 )}
               </div>
             ) : null}
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
 
         {/* ======================= UPLOAD & GENERAL WORKFLOWS ======================= */}
+        <AnimatePresence mode="wait">
         {!isRecipientView && (
-          <div className="space-y-6">
+          <motion.div key="sender" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.4, ease: "easeOut" }} className="space-y-6">
             
             {/* Display Link Result View */}
             {shareResult ? (
@@ -857,7 +864,7 @@ export default function App() {
               />
             ) : activeTab === 'history' && user ? (
               /* MY LINKS / HISTORY DASHBOARD SCREEN */
-              <Card className="bg-card border-border rounded-2xl p-6 space-y-5 shadow-xl animate-in fade-in duration-300">
+              <Card className="bg-card/80 backdrop-blur-xl border-border/40 rounded-3xl p-6 sm:p-8 space-y-5 shadow-lg animate-in fade-in duration-300">
                 <div className="pb-4 border-b border-border/60 flex items-center justify-between">
                   <div className="space-y-0.5 text-left">
                     <CardTitle className="text-base font-bold text-foreground tracking-tight">Suas Transferências</CardTitle>
@@ -1024,7 +1031,7 @@ export default function App() {
                   </p>
                 </div>
 
-                <Card className="bg-card border border-border p-5 rounded-2xl shadow-xl space-y-5">
+                <Card className="bg-card/80 backdrop-blur-xl border border-border/40 p-6 rounded-3xl shadow-lg space-y-6 animate-in fade-in zoom-in-95 duration-500">
                   
                   {/* Drag drop dropzone */}
                   <UploadZone
@@ -1160,7 +1167,7 @@ export default function App() {
                         type="button"
                         onClick={handleStartUpload}
                         disabled={uploadLoading || selectedFiles.length === 0}
-                        className="w-full py-3.5 bg-primary hover:bg-primary/90 text-primary-foreground rounded-xl font-bold text-sm tracking-wide transition-all select-none hover:scale-[1.005] active:scale-[0.995] cursor-pointer shadow-lg disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2 border-none"
+                        className="w-full h-14 bg-primary hover:bg-primary/90 text-primary-foreground rounded-2xl font-bold text-[15px] transition-all select-none hover:shadow-xl hover:-translate-y-0.5 active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2 border-none"
                       >
                         {uploadLoading ? (
                           <>
@@ -1177,8 +1184,9 @@ export default function App() {
                 </Card>
               </div>
             )}
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
 
       </main>
 
