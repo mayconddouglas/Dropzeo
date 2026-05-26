@@ -325,7 +325,14 @@ export default function App() {
             }
           } catch (_) {}
         } else {
-          errorMsg = `Erro do servidor (${xhr.status}): Resposta inválida ou serviço indisponível.`;
+          try {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = xhr.responseText;
+            const textContent = tempDiv.textContent || tempDiv.innerText || xhr.responseText;
+            errorMsg = `Erro Vercel (${xhr.status}): ${textContent.slice(0, 150).trim()}`;
+          } catch(e) {
+            errorMsg = `Erro do servidor (${xhr.status}): Resposta inválida.`;
+          }
         }
         setUploadError(errorMsg);
         setSelectedFiles((prev) => prev.map((f) => ({ ...f, status: 'failed', error: errorMsg })));
