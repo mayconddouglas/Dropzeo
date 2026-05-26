@@ -58,95 +58,111 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method !== 'POST') return res.status(405).end();
   
-  await runMiddleware(req, res, upload.array('files'));
-  
-  const files = (req as any).files;
-  if (!files || files.length === 0) {
-    return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
-  }
+  try {
+    await runMiddleware(req, res, upload.array('files'));
+    
+    const files = (req as any).files;
+    if (!files || files.length === 0) {
+      return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+    }
 
-  const expirationOpt = req.body.expiration || '15min';
-  const selfDestructOpt = req.body.self_destruct === 'true';
-  const passwordOpt = req.body.password || null;
+    const expirationOpt = req.body.expiration || '15min';
+    const selfDestructOpt = req.body.self_destruct === 'true';
+    const passwordOpt = req.body.password || null;
 
-  let totalBytes = 0;
-  for (const file of files) {
-    totalBytes += file.size;
-  }
+    let totalBytes = 0;
+    for (const file of files) {
+      totalBytes += file.size;
+    }
 
-  const MAX_SESSION_BYTES = 50 * 1024 * 1024;
-  if (totalBytes > MAX_SESSION_BYTES) {
-    return res.status(400).json({ error: 'BETA_LIMIT_EXCEEDED' });
-  }
+    const MAX_SESSION_BYTES = 50 * 1024 * 1024;
+    if (totalBytes > MAX_SESSION_BYTES) {
+      return res.status(400).json({ error: 'BETA_LIMIT_EXCEEDED' });
+    }
 
-  // Auth check
-  const user = await getAuthUser(req);
-  const LIMIT_20MB = 20 * 1024 * 1024;
+    // Auth check
+    const user = await getAuthUser(req);
+    const LIMIT_20MB = 20 * 1024 * 1024;
 
-  if (!user && totalBytes > LIMIT_20MB) {
-    return res.status(401).json({
-      error: 'AUTH_REQUIRED',
-      message: 'Uploads maiores de 20MB exigem cadastro ou login.'
-    });
-  }
+    if (!user && totalBytes > LIMIT_20MB) {
+      return res.status(401).json({
+        error: 'AUTH_REQUIRED',
+        message: 'Uploads maiores de 20MB exigem cadastro ou login.'
+      });
+    }
 
-  let durationMinutes = 15;
-  if (expirationOpt === '5min') durationMinutes = 5;
-  if (expirationOpt === '30min') durationMinutes = 30;
+    let durationMinutes = 15;
+    if (expirationOpt === '5min') durationMinutes = 5;
+    if (expirationOpt === '30min') durationMinutes = 30;
 
-  const expiresAt = new Date();
-  expiresAt.setMinutes(expiresAt.getMinutes() + durationMinutes);
+    const expiresAt = new Date();
+    expiresAt.setMinutes(expiresAt.getMinutes() + durationMinutes);
 
-  const supabaseAdmin = getSupabaseAdmin();
+    const supabaseAdmin = getSupabaseAdmin();
 
-  let shareToken = generateToken(10);
-  
-  const { data: session, error: sessionError } = await supabaseAdmin
-    .from('upload_sessions')
-    .insert({
-      user_id: user ? user.id : null,
+    let shareToken = generateToken(10);
+    
+    const { data: session, error: sessionError } = await supabaseAdmin
+      .from('upload_sessions')
+      .insert({
+        user_id: user ? user.id : null,
+        share_token: shareToken,
+        expires_at: expiresAt.toISOString(),
+        is_expired: false,
+        self_destruct: selfDestructOpt,
+        password: passwordOpt
+      })
+      .select('id')
+      .single();
+
+    if (sessionError || !session) {
+      console.error('Session Insert Error:', sessionError);
+      return res.status(500).json({ error: 'Falha ao processar sessão.', details: sessionError });
+    }
+
+    const sessionId = session.id;
+
+    for (const file of files) {
+      const cleanOriginalName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+      const uniquePrefix = generateToken(6);
+      const storagePath = `session-${shareToken}/${uniquePrefix}-${cleanOriginalName}`;
+
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from('dropzeo-files')
+        .upload(storagePath, file.buffer, {
+          contentType: file.mimetype,
+          cacheControl: '3600',
+          upsert: true
+        });
+
+      if (uploadError) {
+        console.error('Storage Upload Error:', uploadError);
+        return res.status(500).json({ error: 'Falha ao fazer upload na nuvem.', details: uploadError });
+      }
+
+      const { error: dbError } = await supabaseAdmin
+        .from('files')
+        .insert({
+          session_id: sessionId,
+          original_name: file.originalname,
+          storage_path: storagePath,
+          mime_type: file.mimetype,
+          size_bytes: file.size
+        });
+        
+      if (dbError) {
+        console.error('DB Insert Error:', dbError);
+        return res.status(500).json({ error: 'Falha ao registrar arquivo no banco.', details: dbError });
+      }
+    }
+
+    res.json({
+      success: true,
       share_token: shareToken,
       expires_at: expiresAt.toISOString(),
-      is_expired: false,
-      self_destruct: selfDestructOpt,
-      password: passwordOpt
-    })
-    .select('id')
-    .single();
-
-  if (sessionError || !session) {
-    return res.status(500).json({ error: 'Falha ao processar sessão.' });
+    });
+  } catch (globalError: any) {
+    console.error('Internal Server Error in /api/upload.ts:', globalError);
+    return res.status(500).json({ error: 'Erro inesperado no servidor', details: globalError?.message });
   }
-
-  const sessionId = session.id;
-
-  for (const file of files) {
-    const cleanOriginalName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
-    const uniquePrefix = generateToken(6);
-    const storagePath = `session-${shareToken}/${uniquePrefix}-${cleanOriginalName}`;
-
-    await supabaseAdmin.storage
-      .from('dropzeo-files')
-      .upload(storagePath, file.buffer, {
-        contentType: file.mimetype,
-        cacheControl: '3600',
-        upsert: true
-      });
-
-    await supabaseAdmin
-      .from('files')
-      .insert({
-        session_id: sessionId,
-        original_name: file.originalname,
-        storage_path: storagePath,
-        mime_type: file.mimetype,
-        size_bytes: file.size
-      });
-  }
-
-  res.json({
-    success: true,
-    share_token: shareToken,
-    expires_at: expiresAt.toISOString(),
-  });
 }

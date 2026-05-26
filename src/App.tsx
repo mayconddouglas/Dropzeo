@@ -319,6 +319,10 @@ export default function App() {
           try {
             const res = JSON.parse(xhr.responseText);
             errorMsg = res.error || res.message || errorMsg;
+            if (res.details) {
+              const detailStr = typeof res.details === 'object' ? JSON.stringify(res.details) : String(res.details);
+              errorMsg += ` - Detalhes: ${detailStr}`;
+            }
           } catch (_) {}
         } else {
           errorMsg = `Erro do servidor (${xhr.status}): Resposta inválida ou serviço indisponível.`;
