@@ -1,26 +1,14 @@
-import multer from 'multer';
+import { IncomingForm } from 'formidable';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getSupabaseAdmin, supabase } from '../src/lib/supabase';
 import { generateToken } from '../src/lib/utils';
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 52428800 }
-});
+import fs from 'fs';
 
 export const config = {
   api: {
     bodyParser: false,
   },
 };
-
-const runMiddleware = (req: any, res: any, fn: any) =>
-  new Promise((resolve, reject) => {
-    fn(req, res, (result: any) => {
-      if (result instanceof Error) return reject(result);
-      return resolve(result);
-    });
-  });
 
 async function getAuthUser(req: VercelRequest) {
   const authHeader = req.headers.authorization;
@@ -59,16 +47,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).end();
   
   try {
-    await runMiddleware(req, res, upload.array('files'));
-    
-    const files = (req as any).files;
+    const form = new IncomingForm({
+      maxFileSize: 50 * 1024 * 1024,
+      keepExtensions: true,
+    });
+
+    const [fields, formFiles] = await new Promise<[any, any]>((resolve, reject) => {
+      form.parse(req, (err, fields, files) => {
+        if (err) return reject(err);
+        resolve([fields, files]);
+      });
+    });
+
+    const uploadedFilesRaw = formFiles.files;
+    const files = Array.isArray(uploadedFilesRaw) ? uploadedFilesRaw : (uploadedFilesRaw ? [uploadedFilesRaw] : []);
+
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
     }
 
-    const expirationOpt = req.body.expiration || '15min';
-    const selfDestructOpt = req.body.self_destruct === 'true';
-    const passwordOpt = req.body.password || null;
+    const getFirst = (field: any) => Array.isArray(field) ? field[0] : field;
+
+    const expirationOpt = getFirst(fields.expiration) || '15min';
+    const selfDestructOpt = getFirst(fields.self_destruct) === 'true';
+    const passwordOpt = getFirst(fields.password) || null;
 
     let totalBytes = 0;
     for (const file of files) {
@@ -123,14 +125,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const sessionId = session.id;
 
     for (const file of files) {
-      const cleanOriginalName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+      const originalFilename = file.originalFilename || file.newFilename || 'file';
+      const cleanOriginalName = originalFilename.replace(/[^a-zA-Z0-9.\-_]/g, '_');
       const uniquePrefix = generateToken(6);
       const storagePath = `session-${shareToken}/${uniquePrefix}-${cleanOriginalName}`;
 
+      const fileBuffer = await fs.promises.readFile(file.filepath);
+
       const { error: uploadError } = await supabaseAdmin.storage
         .from('dropzeo-files')
-        .upload(storagePath, file.buffer, {
-          contentType: file.mimetype,
+        .upload(storagePath, fileBuffer, {
+          contentType: file.mimetype || 'application/octet-stream',
           cacheControl: '3600',
           upsert: true
         });
@@ -144,9 +149,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .from('files')
         .insert({
           session_id: sessionId,
-          original_name: file.originalname,
+          original_name: originalFilename,
           storage_path: storagePath,
-          mime_type: file.mimetype,
+          mime_type: file.mimetype || 'application/octet-stream',
           size_bytes: file.size
         });
         
@@ -166,3 +171,4 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: 'Erro inesperado no servidor', details: globalError?.message });
   }
 }
+
