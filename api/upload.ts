@@ -39,7 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).end();
   
   try {
-    const body = req.body || {};
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
     const { files, expiration, self_destruct, password } = body;
 
     if (!files || !Array.isArray(files) || files.length === 0) {

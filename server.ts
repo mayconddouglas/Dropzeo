@@ -180,21 +180,23 @@ app.post('/api/welcome-email', async (req, res): Promise<any> => {
  * POST /api/upload
  * Multi-file upload, session creation
  */
-app.post('/api/upload', upload.array('files'), async (req, res): Promise<any> => {
+app.post('/api/upload', async (req, res): Promise<any> => {
   try {
-    const files = req.files as Express.Multer.File[];
-    if (!files || files.length === 0) {
+    const body = req.body || {};
+    const { files, expiration, self_destruct, password } = body;
+
+    if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
     }
 
-    const expirationOpt = req.body.expiration || '15min'; // 5min, 15min, or 30min
-    const selfDestructOpt = req.body.self_destruct === 'true';
-    const passwordOpt = req.body.password || null;
+    const expirationOpt = expiration || '15min'; // 5min, 15min, or 30min
+    const selfDestructOpt = self_destruct === true;
+    const passwordOpt = password || null;
     
     // 1. Calculate total bytes
     let totalBytes = 0;
     for (const file of files) {
-      totalBytes += file.size;
+      totalBytes += file.size || 0;
     }
 
     // Sessions are capped at 50MB in Beta version
@@ -265,50 +267,50 @@ app.post('/api/upload', upload.array('files'), async (req, res): Promise<any> =>
 
     const sessionId = session.id;
 
-    // 6. Upload files to Supabase Storage and Insert file records
-    const uploadedFilesMetadata = [];
+    // 6. Generate signed upload URLs for each file and insert into DB
+    const fileUploadConfigs = [];
 
     for (const file of files) {
       // Create a unique storage path: session-[shareToken]/[randomPart]-[original_name]
-      const cleanOriginalName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, '_');
+      const originalFilename = file.name || 'file';
+      const cleanOriginalName = originalFilename.replace(/[^a-zA-Z0-9.\-_]/g, '_');
       const uniquePrefix = generateToken(6);
       const storagePath = `session-${shareToken}/${uniquePrefix}-${cleanOriginalName}`;
-
-      // Upload file physically via Supabase admin (bypassing Client RLS constraints)
-      const { error: storageError } = await supabaseAdmin.storage
-        .from('dropzeo-files')
-        .upload(storagePath, file.buffer, {
-          contentType: file.mimetype,
-          cacheControl: '3600',
-          upsert: true
-        });
-
-      if (storageError) {
-        console.error(`Failed to upload ${file.originalname} to storage:`, storageError);
-        // Clean up previously uploaded items in session if some files failed
-        // For absolute robustness, we can try to delete whatever was uploaded
-        return res.status(500).json({ error: `Falha ao salvar o arquivo: ${file.originalname}` });
-      }
 
       // Add file DB metadata record
       const { data: fileRecord, error: fileDbError } = await supabaseAdmin
         .from('files')
         .insert({
           session_id: sessionId,
-          original_name: file.originalname,
+          original_name: originalFilename,
           storage_path: storagePath,
-          mime_type: file.mimetype,
-          size_bytes: file.size
+          mime_type: file.type || 'application/octet-stream',
+          size_bytes: file.size || 0
         })
         .select()
         .single();
 
       if (fileDbError) {
-        console.error(`Failed to register ${file.originalname} database entry:`, fileDbError);
+        console.error(`Failed to register ${file.name} database entry:`, fileDbError);
         return res.status(500).json({ error: 'Erro ao registrar metadados dos arquivos.' });
       }
 
-      uploadedFilesMetadata.push(fileRecord);
+      // Create signed URL for client upload
+      const { data: signedUploadData, error: signedUploadError } = await supabaseAdmin.storage
+        .from('dropzeo-files')
+        .createSignedUploadUrl(storagePath);
+
+      if (signedUploadError || !signedUploadData) {
+        console.error('Signed URL Error:', signedUploadError);
+        return res.status(500).json({ error: 'Falha ao gerar URL de upload.', details: signedUploadError });
+      }
+
+      fileUploadConfigs.push({
+        id: file.id,
+        storagePath: storagePath,
+        signedUrl: signedUploadData.signedUrl,
+        token: signedUploadData.token, // Used by @supabase/supabase-js uploadToSignedUrl
+      });
     }
 
     // Return successfully completed session detail
@@ -316,8 +318,7 @@ app.post('/api/upload', upload.array('files'), async (req, res): Promise<any> =>
       success: true,
       share_token: shareToken,
       expires_at: expiresAt.toISOString(),
-      files_count: files.length,
-      total_bytes: totalBytes
+      uploads: fileUploadConfigs,
     });
 
   } catch (error: any) {
