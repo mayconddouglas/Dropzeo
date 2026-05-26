@@ -1,6 +1,6 @@
 import multer from 'multer';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getSupabaseAdmin } from '../src/lib/supabase';
+import { getSupabaseAdmin, supabase } from '../src/lib/supabase';
 import { generateToken } from '../src/lib/utils';
 
 const upload = multer({
@@ -22,7 +22,40 @@ const runMiddleware = (req: any, res: any, fn: any) =>
     });
   });
 
+async function getAuthUser(req: VercelRequest) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+  const token = authHeader.split(' ')[1];
+  if (!token) return null;
+
+  try {
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data.user) {
+      return null;
+    }
+    return data.user;
+  } catch (err) {
+    console.error('Error authenticating user in function:', err);
+    return null;
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // CORS Configuration
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
+  );
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') return res.status(405).end();
   
   await runMiddleware(req, res, upload.array('files'));
@@ -46,9 +79,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'BETA_LIMIT_EXCEEDED' });
   }
 
-  // NOTE: Skipping auth check for brevity in this example as it requires 
-  // refactoring getAuthUser which uses 'express.Request', not 'VercelRequest'.
-  // In a real migration one would need to update getAuthUser to support VercelRequest.
+  // Auth check
+  const user = await getAuthUser(req);
+  const LIMIT_20MB = 20 * 1024 * 1024;
+
+  if (!user && totalBytes > LIMIT_20MB) {
+    return res.status(401).json({
+      error: 'AUTH_REQUIRED',
+      message: 'Uploads maiores de 20MB exigem cadastro ou login.'
+    });
+  }
 
   let durationMinutes = 15;
   if (expirationOpt === '5min') durationMinutes = 5;
@@ -64,6 +104,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { data: session, error: sessionError } = await supabaseAdmin
     .from('upload_sessions')
     .insert({
+      user_id: user ? user.id : null,
       share_token: shareToken,
       expires_at: expiresAt.toISOString(),
       is_expired: false,
