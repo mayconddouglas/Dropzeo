@@ -219,37 +219,76 @@ export default function App() {
     setUploadSpeed('Iniciando...');
     setUploadEta('Calculando...');
 
-    // Initialise XMLHttpRequest so we can track exact live percentages
-    const formData = new FormData();
-    selectedFiles.forEach((f) => {
-      formData.append('files', f.file);
-    });
-    formData.append('expiration', expiration);
-    formData.append('self_destruct', String(selfDestruct));
-    if (password) {
-      formData.append('password', password);
-    }
+    // Initialise direct client-side upload
+    try {
+      const payloadFiles = selectedFiles.map((f) => ({
+        id: f.id,
+        name: f.file.name,
+        size: f.file.size,
+        type: f.file.type || 'application/octet-stream'
+      }));
 
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/upload');
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(sessionToken ? { 'Authorization': `Bearer ${sessionToken}` } : {})
+        },
+        body: JSON.stringify({
+          files: payloadFiles,
+          expiration,
+          self_destruct: selfDestruct,
+          password
+        })
+      });
 
-    // Attach user auth token if logged in
-    if (sessionToken) {
-      xhr.setRequestHeader('Authorization', `Bearer ${sessionToken}`);
-    }
+      const contentType = res.headers.get('content-type');
+      const isJson = contentType && contentType.includes('application/json');
 
-    const startTime = Date.now();
+      if (!res.ok) {
+        let errorMsg = 'Falha ao iniciar o upload.';
+        if (isJson) {
+           const errData = await res.json();
+           errorMsg = errData.error || errData.message || errorMsg;
+        } else {
+           const errText = await res.text();
+           const tempDiv = document.createElement('div');
+           tempDiv.innerHTML = errText;
+           const textContent = tempDiv.textContent || tempDiv.innerText || errText;
+           errorMsg = `Erro Vercel (${res.status}): ${textContent.slice(0, 150).trim()}`;
+        }
+        throw new Error(errorMsg);
+      }
 
-    // Update progress
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) {
-        const percent = Math.round((event.loaded / event.total) * 100);
+      const data = await res.json();
+
+      let uploadedBytes = 0;
+      const startTime = Date.now();
+
+      for (let index = 0; index < selectedFiles.length; index++) {
+        const f = selectedFiles[index];
+        const uploadConf = data.uploads.find((u: any) => u.id === f.id);
+        
+        if (!uploadConf) continue;
+        
+        setSelectedFiles((prev) => prev.map((pf) => pf.id === f.id ? { ...pf, status: 'uploading', progress: 0 } : pf));
+        
+        // Direct upload to Supabase via signed URL
+        const { error: upError } = await supabase.storage.from('dropzeo-files').uploadToSignedUrl(uploadConf.storagePath, uploadConf.token, f.file);
+        
+        if (upError) {
+           console.error('Upload Error:', upError);
+           throw new Error(`Falha no upload do arquivo ${f.file.name}: ${upError.message}`);
+        }
+        
+        uploadedBytes += f.file.size;
+        const percent = Math.round((uploadedBytes / totalBytesSelected) * 100);
         setUploadProgress(percent);
 
-        // Live speed & ETA calculations
-        const timeElapsed = (Date.now() - startTime) / 1000; // in seconds
-        if (timeElapsed > 0.15) {
-          const speedBytesPerSec = event.loaded / timeElapsed;
+        // Update overall speed and ETA estimations (using simple averages)
+        const timeElapsed = (Date.now() - startTime) / 1000;
+        if (timeElapsed > 0.5) {
+          const speedBytesPerSec = uploadedBytes / timeElapsed;
           
           let speedStr = '';
           if (speedBytesPerSec >= 1024 * 1024) {
@@ -262,7 +301,7 @@ export default function App() {
           setUploadSpeed(speedStr);
 
           if (percent < 100 && speedBytesPerSec > 0) {
-            const bytesRemaining = event.total - event.loaded;
+            const bytesRemaining = totalBytesSelected - uploadedBytes;
             const etaSeconds = bytesRemaining / speedBytesPerSec;
             if (etaSeconds < 1) {
               setUploadEta('Quase pronto...');
@@ -276,76 +315,25 @@ export default function App() {
           } else {
             setUploadEta('Finalizando...');
           }
-        } else {
-          setUploadSpeed('Calculando...');
-          setUploadEta('Quase lá...');
         }
-
-        setSelectedFiles((prev) =>
-          prev.map((f) => ({
-            ...f,
-            progress: percent,
-            status: 'uploading'
-          }))
-        );
+        
+        setSelectedFiles((prev) => prev.map((pf) => pf.id === f.id ? { ...pf, status: 'completed', progress: 100 } : pf));
       }
-    };
-
-    // Load completions
-    xhr.onload = () => {
+      
       setUploadLoading(false);
-      const contentType = xhr.getResponseHeader('content-type') || '';
-      const isJson = contentType.includes('application/json');
+      setUploadProgress(100);
+      setShareResult({
+        token: data.share_token,
+        expiresAt: data.expires_at
+      });
 
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          if (!isJson) {
-            throw new Error('O servidor retornou uma resposta inválida (esperava JSON, mas recebeu HTML ou texto).');
-          }
-          const data = JSON.parse(xhr.responseText);
-          setSelectedFiles((prev) => prev.map((f) => ({ ...f, progress: 100, status: 'completed' })));
-          setShareResult({
-            token: data.share_token,
-            expiresAt: data.expires_at
-          });
-        } catch (err: any) {
-          const errorMsg = err.message || 'Erro ao carregar resposta do servidor.';
-          setUploadError(errorMsg);
-          setSelectedFiles((prev) => prev.map((f) => ({ ...f, status: 'failed', error: errorMsg })));
-        }
-      } else {
-        let errorMsg = 'Infelizmente, ocorreu uma falha ao enviar os seus arquivos.';
-        if (isJson) {
-          try {
-            const res = JSON.parse(xhr.responseText);
-            errorMsg = res.error || res.message || errorMsg;
-            if (res.details) {
-              const detailStr = typeof res.details === 'object' ? JSON.stringify(res.details) : String(res.details);
-              errorMsg += ` - Detalhes: ${detailStr}`;
-            }
-          } catch (_) {}
-        } else {
-          try {
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = xhr.responseText;
-            const textContent = tempDiv.textContent || tempDiv.innerText || xhr.responseText;
-            errorMsg = `Erro Vercel (${xhr.status}): ${textContent.slice(0, 150).trim()}`;
-          } catch(e) {
-            errorMsg = `Erro do servidor (${xhr.status}): Resposta inválida.`;
-          }
-        }
-        setUploadError(errorMsg);
-        setSelectedFiles((prev) => prev.map((f) => ({ ...f, status: 'failed', error: errorMsg })));
-      }
-    };
-
-    xhr.onerror = () => {
+    } catch (err: any) {
+      console.error(err);
       setUploadLoading(false);
-      setUploadError('Falha crítica de conexão de rede.');
-      setSelectedFiles((prev) => prev.map((f) => ({ ...f, status: 'failed', error: 'Falha de rede' })));
-    };
-
-    xhr.send(formData);
+      const errorMsg = err.message || 'Falha crítica de conexão ou upload.';
+      setUploadError(errorMsg);
+      setSelectedFiles((prev) => prev.map((f) => ({ ...f, status: 'failed', error: errorMsg })));
+    }
   };
 
   // Success handler for Modal login redirection

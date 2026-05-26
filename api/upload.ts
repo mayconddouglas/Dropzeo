@@ -1,14 +1,6 @@
-import { IncomingForm } from 'formidable';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { getSupabaseAdmin, supabase } from '../src/lib/supabase';
 import { generateToken } from '../src/lib/utils';
-import fs from 'fs';
-
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
 
 async function getAuthUser(req: VercelRequest) {
   const authHeader = req.headers.authorization;
@@ -47,34 +39,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).end();
   
   try {
-    const form = new IncomingForm({
-      maxFileSize: 50 * 1024 * 1024,
-      keepExtensions: true,
-    });
+    const body = req.body || {};
+    const { files, expiration, self_destruct, password } = body;
 
-    const [fields, formFiles] = await new Promise<[any, any]>((resolve, reject) => {
-      form.parse(req, (err, fields, files) => {
-        if (err) return reject(err);
-        resolve([fields, files]);
-      });
-    });
-
-    const uploadedFilesRaw = formFiles.files;
-    const files = Array.isArray(uploadedFilesRaw) ? uploadedFilesRaw : (uploadedFilesRaw ? [uploadedFilesRaw] : []);
-
-    if (!files || files.length === 0) {
+    if (!files || !Array.isArray(files) || files.length === 0) {
       return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
     }
 
-    const getFirst = (field: any) => Array.isArray(field) ? field[0] : field;
-
-    const expirationOpt = getFirst(fields.expiration) || '15min';
-    const selfDestructOpt = getFirst(fields.self_destruct) === 'true';
-    const passwordOpt = getFirst(fields.password) || null;
+    const expirationOpt = expiration || '15min';
+    const selfDestructOpt = self_destruct === true;
+    const passwordOpt = password || null;
 
     let totalBytes = 0;
     for (const file of files) {
-      totalBytes += file.size;
+      totalBytes += file.size || 0;
     }
 
     const MAX_SESSION_BYTES = 50 * 1024 * 1024;
@@ -124,26 +102,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const sessionId = session.id;
 
+    // Generate signed upload URLs for each file and insert into DB
+    const fileUploadConfigs = [];
+
     for (const file of files) {
-      const originalFilename = file.originalFilename || file.newFilename || 'file';
+      const originalFilename = file.name || 'file';
       const cleanOriginalName = originalFilename.replace(/[^a-zA-Z0-9.\-_]/g, '_');
       const uniquePrefix = generateToken(6);
       const storagePath = `session-${shareToken}/${uniquePrefix}-${cleanOriginalName}`;
-
-      const fileBuffer = await fs.promises.readFile(file.filepath);
-
-      const { error: uploadError } = await supabaseAdmin.storage
-        .from('dropzeo-files')
-        .upload(storagePath, fileBuffer, {
-          contentType: file.mimetype || 'application/octet-stream',
-          cacheControl: '3600',
-          upsert: true
-        });
-
-      if (uploadError) {
-        console.error('Storage Upload Error:', uploadError);
-        return res.status(500).json({ error: 'Falha ao fazer upload na nuvem.', details: uploadError });
-      }
 
       const { error: dbError } = await supabaseAdmin
         .from('files')
@@ -151,20 +117,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           session_id: sessionId,
           original_name: originalFilename,
           storage_path: storagePath,
-          mime_type: file.mimetype || 'application/octet-stream',
-          size_bytes: file.size
+          mime_type: file.type || 'application/octet-stream',
+          size_bytes: file.size || 0
         });
         
       if (dbError) {
         console.error('DB Insert Error:', dbError);
         return res.status(500).json({ error: 'Falha ao registrar arquivo no banco.', details: dbError });
       }
+
+      // Create signed URL for client upload
+      const { data: signedUploadData, error: signedUploadError } = await supabaseAdmin.storage
+        .from('dropzeo-files')
+        .createSignedUploadUrl(storagePath);
+
+      if (signedUploadError || !signedUploadData) {
+        console.error('Signed URL Error:', signedUploadError);
+        return res.status(500).json({ error: 'Falha ao gerar URL de upload.', details: signedUploadError });
+      }
+
+      fileUploadConfigs.push({
+        id: file.id,
+        storagePath: storagePath,
+        signedUrl: signedUploadData.signedUrl,
+        token: signedUploadData.token, // Used by @supabase/supabase-js uploadToSignedUrl
+      });
     }
 
     res.json({
       success: true,
       share_token: shareToken,
       expires_at: expiresAt.toISOString(),
+      uploads: fileUploadConfigs,
     });
   } catch (globalError: any) {
     console.error('Internal Server Error in /api/upload.ts:', globalError);
