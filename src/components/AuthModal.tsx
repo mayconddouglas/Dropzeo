@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase.js';
-import { X, Mail, Lock, User, ArrowRight, Loader2, Sparkles } from 'lucide-react';
+import { X, Mail, Lock, Shield, Loader2, ArrowRight, User } from 'lucide-react';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -9,7 +9,7 @@ interface AuthModalProps {
   title?: string;
 }
 
-export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps) {
+export default function AuthModal({ isOpen, onClose, onSuccess, title }: AuthModalProps) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -23,98 +23,213 @@ export default function AuthModal({ isOpen, onClose, onSuccess }: AuthModalProps
     e.preventDefault();
     setLoading(true);
     setMessage(null);
+
     try {
       if (isSignUp) {
+        // Sign Up
         const { data, error } = await supabase.auth.signUp({
-          email, password,
-          options: { data: { name, full_name: name, avatar_url: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name || email)}` } }
+          email,
+          password,
+          options: {
+            data: {
+              name: name,
+              full_name: name,
+              avatar_url: `https://api.dicebear.com/7.x/adventurer/svg?seed=${encodeURIComponent(name || email)}`
+            }
+          }
         });
+
         if (error) throw error;
-        try { await fetch('/api/welcome-email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, name }) }); } catch {}
+
+        // Call our server endpoint to trigger welcome email sending / logging
+        try {
+          await fetch('/api/welcome-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, name })
+          });
+        } catch (emailErr) {
+          console.error('Failed to call welcome-email endpoint:', emailErr);
+        }
+
+        // Auto sign-in or check email notice
         if (data.session) {
-          setMessage({ type: 'success', text: `Bem-vindo(a), ${name}!` });
-          setTimeout(() => { onSuccess(); onClose(); }, 1000);
+          setMessage({ type: 'success', text: `Conta criada com sucesso! Seja bem-vindo(a), ${name}!` });
+          setTimeout(() => {
+            onSuccess();
+            onClose();
+          }, 1500);
         } else {
-          setMessage({ type: 'success', text: 'Confirme seu e-mail para continuar.' });
+          setMessage({
+            type: 'success',
+            text: `Cadastro realizado, ${name}! Enviamos um e-mail dando boas-vindas para você.`,
+          });
         }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        // Sign In
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
         if (error) throw error;
-        onSuccess();
-        onClose();
+
+        setMessage({ type: 'success', text: 'Login efetuado com sucesso!' });
+        setTimeout(() => {
+          onSuccess();
+          onClose();
+        }, 1000); // Friendly visual feedback
       }
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message || 'Erro de autenticação.' });
+      console.error('Auth error:', err);
+      // Friendly Brazilian Portuguese error messages
+      let errorMsg = err.message || 'Ocorreu um erro na autenticação.';
+      if (err.message?.includes('Invalid login credentials') || err.message?.includes('invalid claim')) {
+        errorMsg = 'E-mail ou senha incorretos.';
+      } else if (err.message?.includes('already registered')) {
+        errorMsg = 'Este e-mail já está cadastrado.';
+      } else if (err.message?.includes('Password should be')) {
+        errorMsg = 'A senha deve conter no mínimo 6 caracteres.';
+      }
+      setMessage({ type: 'error', text: errorMsg });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+    <div id="auth-modal" className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop overlay */}
+      <div 
+        className="absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity"
+        onClick={onClose}
+      />
 
-      {/* Modal */}
-      <div
-        className="relative w-full max-w-sm rounded-2xl bg-[hsl(220_13%_9%)] border border-white/8 shadow-2xl animate-fade-up"
-        onClick={(e) => e.stopPropagation()}
-      >
+      {/* Modal Dialog */}
+      <div className="relative w-full max-w-md overflow-hidden bg-card border border-border rounded-xl p-6 shadow-2xl z-10 animate-in fade-in zoom-in-95 duration-200">
+        
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-white/6">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-cyan-400/10 border border-cyan-400/20 flex items-center justify-center">
-              <Sparkles className="w-4 h-4 text-cyan-400" />
-            </div>
-            <div>
-              <h2 className="text-sm font-semibold text-white/90">{isSignUp ? 'Criar conta' : 'Entrar'}</h2>
-              <p className="text-[11px] text-white/35">Dropzeo · acesso gratuito</p>
-            </div>
+        <div className="flex justify-between items-start mb-6">
+          <div>
+            <h3 className="text-xl font-semibold text-foreground tracking-tight flex items-center gap-2">
+              <Shield className="w-5 h-5 text-primary" />
+              {isSignUp ? 'Criar Conta' : 'Entrar no Dropzeo'}
+            </h3>
+            <p className="text-xs text-muted-foreground mt-1">
+              {title || 'Faça login para gerenciar e enviar arquivos maiores'}
+            </p>
           </div>
-          <button onClick={onClose} className="w-8 h-8 rounded-lg flex items-center justify-center text-white/30 hover:text-white/60 hover:bg-white/5 transition-all cursor-pointer">
-            <X className="w-4 h-4" />
+          <button 
+            onClick={onClose}
+            className="text-muted-foreground hover:text-foreground transition-colors p-1 hover:bg-muted rounded-md"
+            aria-label="Close"
+          >
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-3">
+        {/* Auth form */}
+        <form onSubmit={handleSubmit} className="space-y-4">
           {isSignUp && (
-            <div className="relative">
-              <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/25" />
-              <input className="input-field pl-9" type="text" placeholder="Seu nome" value={name} onChange={(e) => setName(e.target.value)} required />
+            <div>
+              <label className="block text-xs font-medium text-muted-foreground mb-1.5" htmlFor="name-input">
+                Seu Nome Completo
+              </label>
+              <div className="relative">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
+                  <User className="w-4 h-4" />
+                </span>
+                <input
+                  id="name-input"
+                  type="text"
+                  required={isSignUp}
+                  className="w-full bg-background border border-border rounded-lg py-2.5 pl-10 pr-4 text-sm text-foreground focus:outline-none focus:border-primary transition-all"
+                  placeholder="Seu nome ou apelido"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
             </div>
           )}
-          <div className="relative">
-            <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/25" />
-            <input className="input-field pl-9" type="email" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} required />
+
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1.5" htmlFor="email-input">
+              Endereço de E-mail
+            </label>
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
+                <Mail className="w-4 h-4" />
+              </span>
+              <input
+                id="email-input"
+                type="email"
+                required
+                className="w-full bg-background border border-border rounded-lg py-2.5 pl-10 pr-4 text-sm text-foreground focus:outline-none focus:border-primary transition-all"
+                placeholder="nome@exemplo.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
           </div>
-          <div className="relative">
-            <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/25" />
-            <input className="input-field pl-9" type="password" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} required />
+
+          <div>
+            <label className="block text-xs font-medium text-muted-foreground mb-1.5" htmlFor="password-input">
+              Senha
+            </label>
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 text-muted-foreground">
+                <Lock className="w-4 h-4" />
+              </span>
+              <input
+                id="password-input"
+                type="password"
+                required
+                className="w-full bg-background border border-border rounded-lg py-2.5 pl-10 pr-4 text-sm text-foreground focus:outline-none focus:border-primary transition-all"
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
           </div>
 
           {message && (
-            <div className={`px-3 py-2.5 rounded-lg text-xs ${message.type === 'error' ? 'bg-red-500/10 border border-red-500/20 text-red-400' : 'bg-green-500/10 border border-green-500/20 text-green-400'}`}>
+            <div className={`p-3 rounded-lg text-xs leading-relaxed ${
+              message.type === 'success' ? 'bg-[#22c55e]/10 text-[#22c55e] border border-[#22c55e]/20' : 'bg-destructive/10 text-destructive border border-destructive/20'
+            }`}>
               {message.text}
             </div>
           )}
 
           <button
+            id="auth-submit-btn"
             type="submit"
             disabled={loading}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-[hsl(220_14%_6%)] font-semibold text-sm transition-all disabled:opacity-50 cursor-pointer mt-1"
+            className="w-full flex items-center justify-center gap-2 bg-primary hover:bg-primary/90 text-white py-2.5 px-4 rounded-lg font-medium text-sm transition-all focus:ring-2 focus:ring-primary/50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <><span>{isSignUp ? 'Criar conta' : 'Entrar'}</span><ArrowRight className="w-4 h-4" /></>}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => { setIsSignUp(!isSignUp); setMessage(null); }}
-            className="w-full text-center text-xs text-white/30 hover:text-white/55 transition-colors py-1 cursor-pointer"
-          >
-            {isSignUp ? 'Já tem conta? Entrar' : 'Não tem conta? Criar grátis'}
+            {loading ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <>
+                <span>{isSignUp ? 'Criar minha conta' : 'Entrar na minha conta'}</span>
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
           </button>
         </form>
+
+        {/* Footer toggler */}
+        <div className="mt-6 pt-4 border-t border-border text-center text-xs">
+          <button
+            onClick={() => {
+              setIsSignUp(!isSignUp);
+              setMessage(null);
+            }}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {isSignUp ? 'Já tem uma conta? Faça Login' : 'Não tem uma conta ainda? Cadastre-se'}
+          </button>
+        </div>
+
       </div>
     </div>
   );

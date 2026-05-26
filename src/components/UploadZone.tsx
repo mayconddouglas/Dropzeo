@@ -1,9 +1,9 @@
 import React, { useRef, useState } from 'react';
-import { UploadCloud, FolderOpen } from 'lucide-react';
+import { UploadCloud, File, AlertCircle } from 'lucide-react';
 
 interface UploadZoneProps {
   onFilesSelected: (files: FileList | File[]) => void;
-  maxSizeBytes: number;
+  maxSizeBytes: number; // 50MB
   totalSizeBytesSelected: number;
 }
 
@@ -15,76 +15,96 @@ export default function UploadZone({ onFilesSelected, maxSizeBytes, totalSizeByt
   const processFiles = (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setErrorNotice(null);
+
+    // Calc upcoming aggregate size
     let incomingSize = 0;
     const fileArray: File[] = [];
     for (let i = 0; i < files.length; i++) {
-      incomingSize += files[i].size;
-      fileArray.push(files[i]);
+      const f = files[i];
+      incomingSize += f.size;
+      fileArray.push(f);
     }
+
     if (totalSizeBytesSelected + incomingSize > maxSizeBytes) {
-      setErrorNotice('Limite de 50MB por transferência atingido.');
+      setErrorNotice('Você atingiu o limite da Versão Beta: o limite de upload combinado é de 50MB no total por transferência.');
       return;
     }
+
     onFilesSelected(fileArray);
   };
 
   const handleDrag = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsDragActive(e.type === 'dragenter' || e.type === 'dragover');
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setIsDragActive(true);
+    } else if (e.type === 'dragleave') {
+      setIsDragActive(false);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragActive(false);
-    processFiles(e.dataTransfer.files);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      processFiles(e.dataTransfer.files);
+    }
+  };
+
+  const handleSelectFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      processFiles(e.target.files);
+      // Reset input value to allow selecting same file again
+      e.target.value = '';
+    }
   };
 
   return (
-    <div className="space-y-2">
+    <div className="w-full flex flex-col gap-3 font-sans">
       <div
+        id="drag-drop-zone"
         onDragEnter={handleDrag}
-        onDragLeave={(e) => { e.preventDefault(); setIsDragActive(false); }}
         onDragOver={handleDrag}
+        onDragLeave={handleDrag}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
-        className={`relative flex flex-col items-center justify-center gap-4 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200 py-12 px-6
-          ${isDragActive
-            ? 'border-cyan-400 bg-cyan-400/5 dropzone-active'
-            : 'border-white/8 bg-white/[0.02] hover:border-white/15 hover:bg-white/[0.03]'
-          }`}
-      >
-        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-200 ${
+        className={`w-full min-h-[220px] rounded-xl border-2 border-dashed flex flex-col items-center justify-center p-6 text-center transition-all duration-200 cursor-pointer ${
           isDragActive
-            ? 'bg-cyan-400/15 text-cyan-400'
-            : 'bg-white/5 text-white/30'
-        }`}>
-          <UploadCloud className="w-7 h-7" strokeWidth={1.5} />
-        </div>
-        <div className="text-center space-y-1">
-          <p className="text-sm font-medium text-white/70">
-            {isDragActive ? 'Solte os arquivos aqui' : 'Arraste arquivos ou clique para selecionar'}
-          </p>
-          <p className="text-xs text-white/25">Qualquer formato · até 50 MB por transferência</p>
-        </div>
-        <div className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/5 border border-white/8 text-xs text-white/40 hover:text-white/60 transition-colors">
-          <FolderOpen className="w-3.5 h-3.5" />
-          Escolher arquivos
-        </div>
+            ? 'border-primary bg-primary/5 text-foreground scale-[0.99]'
+            : 'border-border bg-card/45 hover:border-primary/60 text-muted-foreground hover:text-foreground'
+        }`}
+      >
         <input
-          ref={fileInputRef}
           type="file"
+          ref={fileInputRef}
           multiple
           className="hidden"
-          onChange={(e) => processFiles(e.target.files)}
+          onChange={handleSelectFiles}
+          id="file-selector-input"
         />
+
+        <div className="flex flex-col items-center gap-4">
+          <div className={`p-4 rounded-full bg-card border border-border text-primary transition-transform duration-300 ${isDragActive ? 'scale-110' : ''}`}>
+            <UploadCloud className="w-8 h-8" />
+          </div>
+          <div className="space-y-1">
+            <p className="font-medium text-sm md:text-base text-foreground">
+              Solte seus arquivos aqui ou clique para selecionar
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Qualquer formato é aceito. Limite de até 50MB por link (Versão Beta).
+            </p>
+          </div>
+        </div>
       </div>
+
       {errorNotice && (
-        <p className="text-xs text-red-400 flex items-center gap-1.5 px-1">
-          <span className="w-1 h-1 rounded-full bg-red-400 shrink-0" />
-          {errorNotice}
-        </p>
+        <div id="upload-zone-error" className="flex items-start gap-2 bg-destructive/10 text-destructive border border-destructive/20 p-3 rounded-xl text-xs">
+          <AlertCircle className="w-4 h-4 shrink-0" />
+          <span>{errorNotice}</span>
+        </div>
       )}
     </div>
   );

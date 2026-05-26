@@ -1,13 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
-
-function getSupabaseAdmin() {
-  const url = process.env.VITE_SUPABASE_URL || '';
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  return createClient(url, key, {
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-}
+import { getSupabaseAdmin } from '../../../src/lib/supabase';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).end();
@@ -38,7 +30,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     return res.json({ success: true, message: 'Autodestruição ignorada.' });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: 'Erro interno.' });
+    res.status(500).json({ error: 'Erro interno.' });
   }
 }
