@@ -102,10 +102,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const sessionId = session.id;
 
-    // Generate signed upload URLs for each file and insert into DB
-    const fileUploadConfigs = [];
-
-    for (const file of files) {
+    // Generate signed upload URLs in parallel to avoid Vercel timeout on large batches
+    const fileUploadConfigs = await Promise.all(files.map(async (file) => {
       const originalFilename = file.name || 'file';
       const cleanOriginalName = originalFilename.replace(/[^a-zA-Z0-9.\-_]/g, '_');
       const uniquePrefix = generateToken(6);
@@ -120,29 +118,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           mime_type: file.type || 'application/octet-stream',
           size_bytes: file.size || 0
         });
-        
+
       if (dbError) {
-        console.error('DB Insert Error:', dbError);
-        return res.status(500).json({ error: 'Falha ao registrar arquivo no banco.', details: dbError });
+        throw new Error(`DB_INSERT_ERROR:${dbError.message}`);
       }
 
-      // Create signed URL for client upload
       const { data: signedUploadData, error: signedUploadError } = await supabaseAdmin.storage
         .from('dropzeo-files')
         .createSignedUploadUrl(storagePath);
 
       if (signedUploadError || !signedUploadData) {
-        console.error('Signed URL Error:', signedUploadError);
-        return res.status(500).json({ error: 'Falha ao gerar URL de upload.', details: signedUploadError });
+        throw new Error(`SIGNED_URL_ERROR:${signedUploadError?.message || 'unknown'}`);
       }
 
-      fileUploadConfigs.push({
+      return {
         id: file.id,
-        storagePath: storagePath,
+        storagePath,
         signedUrl: signedUploadData.signedUrl,
-        token: signedUploadData.token, // Used by @supabase/supabase-js uploadToSignedUrl
-      });
-    }
+        token: signedUploadData.token,
+      };
+    }));
 
     res.json({
       success: true,
